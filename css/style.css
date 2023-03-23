@@ -1,0 +1,317 @@
+/*STYLE.CSS*/
+/*-------------------------------------------------------------------------------------------------------------------------------*/
+/*This is main CSS file that contains custom style rules used in this template*/
+/*-------------------------------------------------------------------------------------------------------------------------------*/
+/* Template Name: Delice.*/
+/* Version: 1.0 Initial Release*/
+/* Author: Gerich & Taras*/
+/* Copyright: (C) 2017 */
+/*-------------------------------------------------------------------------------------------------------------------------------*/
+/*--------------------------------------------------------*/
+/* TABLE OF CONTENTS: */
+/*--------------------------------------------------------*/
+/* 01 - RESET */
+/* 02 - EMPTY SPACE */
+/* 03 - BOOTSTRAP */
+/* 04 - HELP CLASSES */
+/* 05 - TYPOGRAPHY */
+/* 06 - FOOTERS */
+/* 07 - HEADERS */
+/* 08 - HOME PAGE */
+/* 09 - ABOUT */
+/* 10 - SERVICES */
+/* 11 - PAGE MENU */
+/* 12 - BLOG */
+/* 13 - SHOP */
+/* 14 - CHECKOUT */
+/* 15 - PRODUCT DETAIL */
+/* 16 - COMING SOON */
+/* 17 - HOME-6 */
+/* 18 - HOME-7 */
+/* 19 - GALLERY */
+/* 20 - CONTACT */
+/* 21 - QUICK POP-UP */
+/* 22 - LOG IN POP-UP */
+/* 23 - THEMEFOREST BUTTON */
+/* 24 - RESPONSIVE */
+/* 25 - SLIDER ANIMATION */
+
+/*-------------------------------------------------------------------------------------------------------------------------------*/
+
+
+
+/*-------------------------------------------------------------------------------------------------------------------------------*/
+/* 01 - RESET */
+/*-------------------------------------------------------------------------------------------------------------------------------*/
+.clearfix{
+  clear:both;
+}
+
+/*navbar*/
+nav{
+  background-color:green;
+  
+}
+nav ul{
+  list-style:none;
+}
+nav li{
+  display:inline-block;
+  padding:12px;
+}
+nav a{
+  text-decoration:none;
+  color:white;
+  font-size:1.2em;
+}
+
+.link1:hover{
+  color:red;
+  transition:3s;
+}
+
+.main-content{
+  width:94%;
+  margin-right:auto;
+  margin-left:auto;
+}
+.content{
+  width:69%;
+  margin-right:1%;
+  float:left;
+}
+.aside{
+  width:70%;
+  float:left;
+}
+
+/*top-content*/
+.top-content img{
+  width:550px;
+  float:left;
+  margin-right:10px;
+}
+
+.top-content ul{
+  list-style:none;
+}
+.top-content li{
+  line-height:90px;
+}
+.top-content a{
+  text-decoration:none;
+  font-size:1.1em;
+  
+}
+.link2:hover{
+  color:red;
+  transition:2s;
+}
+.sub-content{
+  width:50%;
+  float:left;
+  color:blue;
+  
+}
+.sub-content img{
+  width:350px;
+  
+}
+.sub-content ul{
+  list-style:none;
+}
+.sub-content li{
+  line-height:30px;
+  
+}
+.sub-content a
+{text-decoration:none;}
+aside img{
+  width:300px;
+}
+
+.selectAll {
+  padding: 5px;
+  
+  background-color: blue;
+  text-decoration: none;
+  border-radius: 4px;
+}
+h3{
+  width: max-content;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+a.addProduct1:hover {
+  color:red;
+  transition:  0.3s;
+  text-decoration:none;
+}
+a.addProduct1 {
+  text-decoration: none;
+  color: white;
+  font-size: 1.3em;
+  padding: 0 7px;
+  background-color: #BADBB2;
+  border-radius: 3px;
+  margin-left:15px;
+}
+a.addProduct2:hover {
+  color:red;
+  transition:  0.3s;
+  text-decoration:none;
+}
+a.addProduct2 {
+  text-decoration: none;
+  color: white;
+  font-size: 1.3em;
+  padding: 0 7px;
+  background-color: #BADBB2;
+  border-radius: 3px;
+  margin-left:15px;
+}
+a.addProduct3:hover {
+  color:red;
+  transition:  0.3s;
+  text-decoration:none;
+}
+a.addProduct3 {
+  text-decoration: none;
+  color: white;
+  font-size: 1.3em;
+  padding: 0 7px;
+  background-color: #BADBB2;
+  border-radius: 3px;
+  margin-left:15px;
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  flex-grow: 1;
+  /* font matters a good deal here, esp the width of the numerals */
+  font-family: "Source Sans Pro", serif;
+}
+
+.stat-figure {
+  font-size: 3em;
+  display: flex;
+  font-weight: bold;
+}
+
+.stat-caption {
+  text-align: center;
+}
+
+/* Demo styling only */
+
+:root {
+  --color-background: teal;
+  --color-text: #f6fde1;
+  --color-accent: #faff98;
+  --gap: clamp(1rem, 6vw, 3rem);
+  --full: minmax(var(--gap), 1fr);
+  --content: min(30em, 100% - var(--gap) * 2);
+  --popout: minmax(0, 3rem);
+}
+
+/* Forced reset */
+*, *:before, *:after {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Lora', serif;
+  background-color: white;
+  color: var(--color-text);
+  font-size: clamp(1.125rem, 0.625vw + 0.875rem, 1.625rem);
+  line-height: 1.25;
+}
+
+h1, h2, h3, h4 {
+  color: var(--color-accent);
+  font-family: 'Source Sans Pro', sans-serif;
+}
+
+.text-reverse {
+  padding: 3ch;
+  background-color: var(--color-text);
+  color: var(--color-background);
+  border-radius: 2ch;
+}
+
+/* Simple grid with popout */
+.grid {
+  display: grid;
+  grid-template-columns:
+    [full-start] var(--full)
+    [popout-start] var(--popout)
+    [content-start] var(--content) [content-end]
+    var(--popout) [popout-end]
+    var(--full) [full-end];
+}
+
+.grid > * {
+  grid-column: content;
+}
+
+.popout {
+  grid-column: popout;
+}
+
+/* Simple vertical rhythm */
+.flow > * + * {
+  margin-top: var(--flow, 1em)
+}
+
+.flex {
+  display: flex;
+}
+
+.gap {
+  gap: 2ch;
+}
+
+.mb-10vh {
+  margin-bottom: 10vh;
+}
+
+.fixed-bottom-right {
+  position: fixed;
+  bottom: 0;
+  right: 0;
+}
+
+.bubble {
+  background-color: rgba(0,0,0,0.3);
+  padding: 1ch 2ch;
+  border-top: 2px solid var(--color-accent);
+  border-left: 2px solid var(--color-accent);
+  border-top-left-radius: 1ch;
+  font-family: 'Source Sans Pro', sans-serif;
+}
+
+.text-accent {
+  color: var(--color-accent);
+}
+
+.no-decoration {
+  text-decoration: none;
+}
+
+
+    
+  .scroll-type-1 {transform: translateY(60%); -webkit-transform: translateY(80%); -ms-transform: translateY(60%);  opacity: 0; transition: transform 1s ease, opacity 0.55s ease-out 0.6s; -webkit-transition: transform 1s ease, opacity 0.55s ease-out 0.6s;-ms-transition: transform 1s ease, opacity 0.55s ease-out 0.6s;}
+  .scroll-type-1.animated {opacity: 1; transform: translateY(0); -webkit-transform: translateY(0);-ms-transform: translateY(0);}
+  
+  .no-animated .scroll-type-1 {opacity: 1; transform: translateY(0); -webkit-transform: translateY(0);-ms-transform: translateY(0);} 
+
+
+
+
+
+
