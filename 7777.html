@@ -9,25 +9,20 @@
     <h2>輸入數字並存入 text 檔案</h2>
     <input type="number" id="numberInput" placeholder="輸入數字">
     <button onclick="sendNumber()">提交</button>
-    <p id="status"></p> <!-- 用來顯示伺服器回應訊息 -->
+    <p id="status"></p>
 
     <script>
         function sendNumber() {
-            // 取得用戶輸入的數字
             let number = document.getElementById("numberInput").value;
 
-            // 確保輸入框有數字
             if (!number) {
                 document.getElementById("status").innerText = "請輸入數字！";
                 return;
             }
 
-            // 發送數據到後端
-            fetch("/send-to-ngrok", {
+            fetch("/save", {  // 不需寫 ngrok 網址，直接呼叫相對路徑
                 method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
+                headers: {"Content-Type": "application/json"},
                 body: JSON.stringify({ number: number })
             })
             .then(response => response.json())
