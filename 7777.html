@@ -6,25 +6,39 @@
     <title>數字存入文字檔</title>
 </head>
 <body>
+    <h2>輸入數字並存入 text 檔案</h2>
+    <input type="number" id="numberInput" placeholder="輸入數字">
     <button onclick="sendNumber()">提交</button>
+    <p id="status"></p> <!-- 用來顯示伺服器回應訊息 -->
+
     <script>
-         function sendNumber() {
-             let number = document.getElementById("numberInput").value;
-             fetch("/send-to-ngrok", {
-                 method: "POST",
-                 headers: {
-                     "Content-Type": "application/json"
-                 },
-                 body: JSON.stringify({ number: number })
-             })
-             .then(response => response.json())
-             .then(data => {
-                 document.getElementById("status").innerText = data.message;
-             })
-             .catch(error => {
-                 console.error("錯誤:", error);
-             });
-         }
+        function sendNumber() {
+            // 取得用戶輸入的數字
+            let number = document.getElementById("numberInput").value;
+
+            // 確保輸入框有數字
+            if (!number) {
+                document.getElementById("status").innerText = "請輸入數字！";
+                return;
+            }
+
+            // 發送數據到後端
+            fetch("/send-to-ngrok", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({ number: number })
+            })
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById("status").innerText = data.message;
+            })
+            .catch(error => {
+                console.error("錯誤:", error);
+                document.getElementById("status").innerText = "發生錯誤！";
+            });
+        }
     </script>    
 </body>
 </html>
