@@ -2,11 +2,10 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>數字存入文字檔</title>
 </head>
 <body>
-    <h2>輸入數字並存入 text 檔案</h2>
+    <h2>輸入數字並存入文字檔</h2>
     <input type="number" id="numberInput" placeholder="輸入數字">
     <button onclick="sendNumber()">提交</button>
     <p id="status"></p>
@@ -20,7 +19,7 @@
                 return;
             }
 
-            fetch("/save", {  // 不需寫 ngrok 網址，直接呼叫相對路徑
+            fetch("https://59bf-36-224-190-81.ngrok-free.app/send-to-ngrok", {  
                 method: "POST",
                 headers: {"Content-Type": "application/json"},
                 body: JSON.stringify({ number: number })
@@ -30,8 +29,8 @@
                 document.getElementById("status").innerText = data.message;
             })
             .catch(error => {
-                console.error("錯誤:", error);
                 document.getElementById("status").innerText = "發生錯誤！";
+                console.error("錯誤:", error);
             });
         }
     </script>    
