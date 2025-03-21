@@ -3,12 +3,33 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Welcome to My Page</title>
-    <link rel="stylesheet" href="style.css">
+    <title>數字存入文字檔</title>
 </head>
 <body>
-    <h1>Hello, welcome to my page!</h1>
-    <p>This is a simple static website hosted on GitHub Pages.</p>
-    <script src="script.js"></script>
+    <h2>輸入數字並存入 text 檔案</h2>
+    <input type="number" id="numberInput" placeholder="輸入數字">
+    <button onclick="sendNumber()">提交</button>
+    <p id="status"></p>
+
+    <script>
+        function sendNumber() {
+            let number = document.getElementById("numberInput").value;
+
+            fetch("https://b711-36-224-190-81.ngrok-free.app/save", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({ number: number })
+            })
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById("status").innerText = data.message;
+            })
+            .catch(error => {
+                console.error("錯誤:", error);
+            });
+        }
+    </script>
 </body>
 </html>
