@@ -2,60 +2,71 @@
 <html lang="zh-TW">
 <head>
   <meta charset="UTF-8">
-  <title>恩典行動：寫見證</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>一年內生命見證上傳</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <style>
-    body{font-family:'Microsoft JhengHei',sans-serif;}
-    .main{max-width:350px;margin:40px auto;}
-    select,input,textarea{width:100%;max-width:340px;padding:6px;margin:8px 0;}
-    button{padding:8px 20px;}
+    /* ...保持你原本的樣式... */
   </style>
 </head>
 <body>
-  <div class="main">
-    <h2>恩典行動：寫見證</h2>
-    <form id="form" onsubmit="sendTestimony(event)">
-      <label>請選你的名字：</label>
-      <select id="myname" required>
-        <option value="">請選擇</option>
-        <option>terry</option><option>christine</option><option>Deborah</option><option>Eddie</option><option>Erica</option>
-        <option>Kevein</option><option>Lewvis</option><option>Lexie</option><option>Nico</option><option>Stella</option>
-        <option>Esther</option><option>Devin</option><option>Gary</option>
-      </select>
-      <label>（選填）要設定密碼嗎？</label>
-      <input type="password" id="mypw" maxlength="20" placeholder="不設定可留空">
-      <label>寫下你的見證：</label>
-      <textarea id="testimonycontent" placeholder="請寫下神在你生命中的恩典" rows="5" required></textarea>
-      <button type="submit">送出見證，進入送祝福卡</button>
-    </form>
-    <p id="status"></p>
+  <h2>一年內生命見證</h2>
+  <textarea id="testimony" placeholder="請輸入你的見證..." rows="5"></textarea><br>
+  <button onclick="submitAndGenerate()">提交並生成圖片</button>
+  <p id="status"></p>
+  <div id="preview">
+    <img id="bgimg" crossOrigin="anonymous" src="https://foxzicool.github.io/pic.svg" alt="背景圖">
+    <div id="content">你的見證會顯示在這裡</div>
   </div>
+  <div id="imgResultArea"></div>
+  <a id="downloadLink" download="testimony.png">下載圖片</a>
+  <p style="color:red;">產生圖片後，<b>長按圖片</b>可以存到相簿</p>
   <script>
-    function sendTestimony(e){
-      e.preventDefault();
-      let name = document.getElementById('myname').value.trim();
-      let password = document.getElementById('mypw').value.trim();
-      let content = document.getElementById('testimonycontent').value.trim();
-      if(!name || !content){
-        document.getElementById('status').innerText = "請填齊名字與見證";
+    document.getElementById("testimony").addEventListener("input", function() {
+      document.getElementById("content").innerText = this.value || "你的見證會顯示在這裡";
+    });
+
+    function submitAndGenerate() {
+      let content = document.getElementById("testimony").value.trim();
+      if (!content) {
+        document.getElementById("status").innerText = "請輸入見證內容！";
         return;
       }
-      localStorage.setItem('myname', name);
-      localStorage.setItem('mypw', password);
-
-fetch("https://8035-61-231-26-86.ngrok-free.app/submit_testimony",{
-  method:"POST",
-  headers:{"Content-Type":"application/json"},
-  body:JSON.stringify({name, password, content})
-})
-
-      .then(r=>r.json())
-      .then(data=>{
-        document.getElementById('status').innerText = data.message;
-        setTimeout(()=>location.href="index2.html", 1000);
+      fetch("https://6782-61-231-26-86.ngrok-free.app/submit_testimony1", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: content })
       })
-      .catch(()=>{
-        document.getElementById('status').innerText = "連線失敗";
+      .then(response => response.json())
+      .then(data => {
+        document.getElementById("status").innerText = data.message;
+        let bgimg = document.getElementById("bgimg");
+        if (!bgimg.complete) {
+          bgimg.onload = generateImage;
+        } else {
+          generateImage();
+        }
+      })
+      .catch(error => {
+        document.getElementById("status").innerText = "後端連不到";
+      });
+    }
+
+    function generateImage() {
+      const preview = document.getElementById("preview");
+      html2canvas(preview, { scale: 2 }).then(canvas => {
+        let imgArea = document.getElementById("imgResultArea");
+        imgArea.innerHTML = '';
+        let img = document.createElement("img");
+        img.src = canvas.toDataURL();
+        img.style.width = "100%";
+        img.style.maxWidth = preview.offsetWidth + "px";
+        img.style.borderRadius = '16px';
+        img.style.marginTop = '16px';
+        img.style.display = 'block';
+        imgArea.appendChild(img);
+        document.getElementById("downloadLink").href = img.src;
+        document.getElementById("downloadLink").style.display = "inline-block";
       });
     }
   </script>
