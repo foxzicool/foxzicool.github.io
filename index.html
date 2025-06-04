@@ -3,32 +3,92 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>數字存入文字檔</title>
+    <title>神的恩典見證上傳</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <style>
+      #preview {
+        width: 300px;
+        height: 400px;
+        padding: 24px 20px 20px 20px;
+        background: url('https://images.unsplash.com/photo-1506744038136-46273834b3fb?fit=crop&w=400&q=80') center/cover no-repeat;
+        border-radius: 16px;
+        color: #fff;
+        font-family: 'Microsoft JhengHei', sans-serif;
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-end;
+        position: relative;
+      }
+      #content {
+        background: rgba(0,0,0,0.35);
+        padding: 10px;
+        border-radius: 8px;
+        word-break: break-all;
+        font-size: 20px;
+      }
+      #downloadLink {
+        display: none;
+        margin-top: 16px;
+        font-size: 16px;
+        color: #2067b2;
+        text-decoration: underline;
+      }
+      textarea {width: 300px;}
+    </style>
 </head>
 <body>
-    <h2>輸入數字並存入 text 檔案</h2>
-    <input type="number" id="numberInput" placeholder="輸入數字">
-    <button onclick="sendNumber()">提交</button>
+    <h2>寫下你經歷的恩典</h2>
+    <textarea id="testimony" placeholder="請輸入你的見證..." rows="5"></textarea><br>
+    <button onclick="submitAndGenerate()">提交並生成圖片</button>
     <p id="status"></p>
 
+    <div id="preview" style="margin-top:24px;">
+      <div id="content">你的見證會顯示在這裡</div>
+    </div>
+    <a id="downloadLink" download="testimony.png">下載圖片</a>
+
     <script>
-        function sendNumber() {
-            let number = document.getElementById("numberInput").value;
-            fetch("https://f7ce-61-231-26-86.ngrok-free.app/save", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({ number: number })
-            })
-            .then(response => response.json())
-            .then(data => {
-                document.getElementById("status").innerText = data.message;
-            })
-            .catch(error => {
-                document.getElementById("status").innerText = "後端連不到";
-            });
+      // 先同步把見證文字放進預覽區
+      document.getElementById("testimony").addEventListener("input", function(){
+        document.getElementById("content").innerText = this.value || "你的見證會顯示在這裡";
+      });
+
+      function submitAndGenerate() {
+        let content = document.getElementById("testimony").value.trim();
+        if (!content) {
+          document.getElementById("status").innerText = "請輸入見證內容！";
+          return;
         }
+
+        // 1. 先送到後端
+        fetch("https://f7ce-61-231-26-86.ngrok-free.app/save", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ number: content }) // 用 number 當 key，和你目前的 Flask 相容
+        })
+        .then(response => response.json())
+        .then(data => {
+          document.getElementById("status").innerText = data.message;
+
+          // 2. 再生成圖片
+          html2canvas(document.getElementById("preview")).then(canvas => {
+            // 如果有舊的圖，先移除
+            let oldCanvas = document.getElementById("previewedImage");
+            if (oldCanvas) oldCanvas.remove();
+            canvas.id = "previewedImage";
+            canvas.style.display = "block";
+            canvas.style.margin = "20px 0 0 0";
+            document.body.appendChild(canvas);
+
+            // 設定下載連結
+            document.getElementById("downloadLink").href = canvas.toDataURL();
+            document.getElementById("downloadLink").style.display = "inline-block";
+          });
+        })
+        .catch(error => {
+          document.getElementById("status").innerText = "後端連不到";
+        });
+      }
     </script>
 </body>
 </html>
