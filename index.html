@@ -10,7 +10,7 @@
     #content { 
       position: absolute;
       left: 4px;
-      bottom: 0;
+      top: 5px;
       margin: 20px;
       padding: 10px;
       border-radius: 8px;
@@ -23,21 +23,57 @@
       min-height: 319px;
     }
     textarea {width: 90vw; max-width: 300px;}
+    #charCount { margin-right: 8px;}
   </style>
 </head>
 <body>
   <h2>一年內生命見證</h2>
-  <textarea id="testimony" placeholder="請輸入你的見證..." rows="5"></textarea><br>
+  <textarea id="testimony" placeholder="請輸入你的見證..." rows="5" maxlength="100"></textarea><br>
+  <span id="charCount">剩餘 100 字</span>
+  <span id="lineCount">可再輸入 10 行</span><br>
   <button onclick="submitTestimony()">提交</button>
   <p id="status"></p>
   <script>
+    const textarea = document.getElementById("testimony");
+    const charCount = document.getElementById("charCount");
+    const lineCount = document.getElementById("lineCount");
+    const MAX_CHAR = 100;
+    const MAX_LINE = 10;
+
+    textarea.addEventListener("input", function() {
+      // 限制字數
+      if (this.value.length > MAX_CHAR) {
+        this.value = this.value.substring(0, MAX_CHAR);
+      }
+      // 限制行數
+      let lines = this.value.split('\n');
+      if (lines.length > MAX_LINE) {
+        this.value = lines.slice(0, MAX_LINE).join('\n');
+        lines = this.value.split('\n');
+      }
+      let remainChar = MAX_CHAR - this.value.length;
+      let remainLine = MAX_LINE - lines.length;
+      charCount.innerText = `剩餘 ${remainChar} 字`;
+      lineCount.innerText = remainLine >= 0 ? `可再輸入 ${remainLine} 行` : "已達行數上限";
+      charCount.style.color = remainChar < 0 ? "red" : "#222";
+      lineCount.style.color = remainLine <= 0 ? "red" : "#222";
+    });
+
     function submitTestimony() {
-      let content = document.getElementById("testimony").value.trim();
+      let content = textarea.value.trim();
+      let lines = content.split('\n');
       if (!content) {
         document.getElementById("status").innerText = "請輸入見證內容！";
         return;
       }
-      // 這裡換成 cloudflared 給你的網址
+      if (content.length > MAX_CHAR) {
+        document.getElementById("status").innerText = "最多只能輸入100字";
+        return;
+      }
+      if (lines.length > MAX_LINE) {
+        document.getElementById("status").innerText = "最多只能輸入10行";
+        return;
+      }
       fetch("https://rfc-caroline-pad-count.trycloudflare.com/submit_testimony1", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
