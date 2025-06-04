@@ -49,7 +49,7 @@
     }
     textarea {width: 90vw; max-width: 300px;}
     #imgResultArea img {
-      width: 90vw;
+      width: 100%;
       max-width: 300px;
       border-radius: 16px;
       margin-top: 16px;
@@ -107,17 +107,15 @@
 
     function generateImage() {
       const preview = document.getElementById("preview");
-      const rect = preview.getBoundingClientRect();
       html2canvas(preview, {
-        scale: 2,
-        width: rect.width,
-        height: rect.height
+        scale: 2 // 高解析，不指定width/height，讓它直接用DOM大小
       }).then(canvas => {
         let imgArea = document.getElementById("imgResultArea");
         imgArea.innerHTML = '';
         let img = document.createElement("img");
         img.src = canvas.toDataURL();
-        img.style.width = rect.width + 'px';
+        img.style.width = "100%";
+        img.style.maxWidth = preview.offsetWidth + "px";
         img.style.borderRadius = '16px';
         img.style.marginTop = '16px';
         img.style.display = 'block';
@@ -128,4 +126,4 @@
     }
   </script>
 </body>
-</html>
+</htmgit 
