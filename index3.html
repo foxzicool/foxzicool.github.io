@@ -2,116 +2,58 @@
 <html lang="zh-TW">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>祈福牆 / 感恩牆 - 送出祝福</title>
+  <title>恩典行動：下載我的卡片</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <style>
-    body { font-family: 'Microsoft JhengHei', sans-serif;}
-    .form-wrap { max-width:350px;margin:auto;}
-    input, textarea { width:100%;max-width:350px;margin-bottom:8px;}
-    #preview {width:100%;max-width:340px;height:210px;position:relative;border-radius:16px;overflow:hidden;margin:20px auto;background:#f7faff;box-shadow:0 2px 12px #eef;}
-    #card-bg {width:100%;height:100%;object-fit:cover;position:absolute;left:0;top:0;z-index:1;}
-    #card-content {position:absolute;bottom:0;left:0;right:0;margin:18px;padding:10px;background:rgba(0,0,0,0.10);border-radius:8px;color:#222;font-size:18px;z-index:2;min-height:48px;}
-    #imgResultArea img {width:100%;max-width:340px;border-radius:16px;margin-top:12px;}
-    .card-list {max-width:350px;margin:40px auto 0 auto;}
-    .card {background:#fff;border-radius:16px;box-shadow:0 2px 8px #eee;margin:12px 0;padding:20px;}
-    #downloadLink {display:none;}
+    body{font-family:'Microsoft JhengHei',sans-serif;}
+    .main{max-width:350px;margin:40px auto;}
+    .card{background:#fff;border-radius:16px;box-shadow:0 2px 8px #eee;margin:14px 0;padding:18px;}
+    .download{color:#2067b2;font-size:14px;cursor:pointer;}
+    button{padding:8px 20px;}
   </style>
 </head>
 <body>
-  <h2>送出祝福卡片</h2>
-  <div class="form-wrap">
-    <input id="myname" placeholder="你的名字">
-    <input id="mypw" type="password" placeholder="你的密碼">
-    <input id="target" placeholder="我要祝福誰">
-    <textarea id="blesscontent" placeholder="請寫下祝福內容" rows="4"></textarea>
-    <button onclick="submitAndGenerate()">送出並預覽卡片</button>
-    <p id="status"></p>
-    <div id="preview">
-      <img id="card-bg" src="https://foxzicool.github.io/pic.svg" alt="背景圖">
-      <div id="card-content">你的祝福會顯示在這裡</div>
-    </div>
-    <div id="imgResultArea"></div>
-    <a id="downloadLink" download="blessing.png">下載卡片</a>
-    <hr>
-    <button onclick="getMyBlessings()">載入我送過的所有卡片</button>
-    <div class="card-list" id="myCards"></div>
+  <div class="main">
+    <h2>下載我的卡片</h2>
+    <div id="mycards"></div>
   </div>
   <script>
-    // 卡片預覽
-    ['myname','target','blesscontent'].forEach(id=>{
-      document.getElementById(id).addEventListener('input',function(){
-        document.getElementById('card-content').innerText =
-          '我是' + (document.getElementById('myname').value||'____')
-          + ',我祝福' + (document.getElementById('target').value||'____')
-          + '：' + (document.getElementById('blesscontent').value||'（祝福內容）');
-      });
-    });
+    let myname = localStorage.getItem('myname') || "";
+    let mypw = localStorage.getItem('mypw') || "";
 
-    function submitAndGenerate() {
-      let name = document.getElementById("myname").value.trim();
-      let password = document.getElementById("mypw").value.trim();
-      let target = document.getElementById("target").value.trim();
-      let content = document.getElementById("blesscontent").value.trim();
-      if (!name || !password || !target || !content) {
-        document.getElementById("status").innerText = "請填齊所有欄位";
-        return;
-      }
-      fetch("https://你的ngrok-url/save_blessing", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({ name, password, target, content })
+    function loadMyCards(){
+      if(!myname){document.getElementById('mycards').innerText="沒有名字，請回首頁選名子";return;}
+      fetch("https://你的ngrok-url/get_my_cards",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({name:myname, password:mypw})
       })
       .then(r=>r.json())
-      .then(data=>{
-        document.getElementById("status").innerText = data.message;
-        if(data.message.includes("已送出")) generateImage();
-      }).catch(()=>{
-        document.getElementById("status").innerText = "後端連線失敗";
+      .then(cards=>{
+        if(!cards.length){document.getElementById('mycards').innerText="你還沒有卡片可以下載";return;}
+        document.getElementById('mycards').innerHTML = cards.map((d,idx)=>`
+          <div class="card" id="card${idx}">
+            <div>${d.type === 'bless' ? `${d.sender} 祝福 <b>${d.target}</b>` : `${d.sender} 的見證`}</div>
+            <div style="margin:10px 0;">${d.content}</div>
+            <div style="font-size:12px;color:#aaa;">${d.date}</div>
+            <button onclick="downloadCard('card${idx}')">下載這張卡片圖片</button>
+          </div>
+        `).join("");
       });
     }
 
-    function generateImage() {
-      html2canvas(document.getElementById("preview"),{scale:2}).then(canvas=>{
-        let imgArea = document.getElementById("imgResultArea");
-        imgArea.innerHTML = '';
-        let img = document.createElement("img");
-        img.src = canvas.toDataURL();
-        imgArea.appendChild(img);
-        document.getElementById("downloadLink").href = img.src;
-        document.getElementById("downloadLink").style.display = "inline-block";
+    function downloadCard(id){
+      let node = document.getElementById(id);
+      html2canvas(node,{scale:2}).then(canvas=>{
+        let a = document.createElement("a");
+        a.href = canvas.toDataURL();
+        a.download = "bless_card.png";
+        a.click();
       });
     }
 
-    function getMyBlessings() {
-      let name = document.getElementById("myname").value.trim();
-      let password = document.getElementById("mypw").value.trim();
-      if (!name || !password) {
-        alert("請先輸入名字與密碼");
-        return;
-      }
-      fetch("https://你的ngrok-url/get_my_blessings",{
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({ name, password })
-      })
-      .then(r=>r.json())
-      .then(data=>{
-        if (data.blessings) {
-          document.getElementById("myCards").innerHTML = data.blessings.map(d=>`
-            <div class="card">
-              <div>${d.name} 祝福 <b>${d.target}</b></div>
-              <div style="margin:8px 0;">${d.content}</div>
-              <div style="font-size:12px;color:#aaa;">${d.date?d.date.slice(0,10):""}</div>
-            </div>
-          `).join("");
-        } else {
-          document.getElementById("myCards").innerText = "查無資料";
-        }
-      }).catch(()=>{
-        document.getElementById("myCards").innerText = "無法連線";
-      });
-    }
+    loadMyCards();
   </script>
 </body>
 </html>

@@ -2,39 +2,59 @@
 <html lang="zh-TW">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>神的恩典見證上傳</title>
+  <title>恩典行動：寫見證</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <style>
-    body { font-family: 'Microsoft JhengHei', sans-serif; }
-    textarea, input { width: 90vw; max-width: 350px; margin-bottom:8px; }
-    button { margin-top: 8px; }
+    body{font-family:'Microsoft JhengHei',sans-serif;}
+    .main{max-width:350px;margin:40px auto;}
+    select,input,textarea{width:100%;max-width:340px;padding:6px;margin:8px 0;}
+    button{padding:8px 20px;}
   </style>
 </head>
 <body>
-  <h2>神的恩典見證上傳</h2>
-  <input id="name" placeholder="你的名字"><br>
-  <textarea id="testimony" placeholder="請輸入你的見證..." rows="5"></textarea><br>
-  <button onclick="sendTestimony()">提交見證</button>
-  <p id="status"></p>
-
+  <div class="main">
+    <h2>恩典行動：寫見證</h2>
+    <form id="form" onsubmit="sendTestimony(event)">
+      <label>請選你的名字：</label>
+      <select id="myname" required>
+        <option value="">請選擇</option>
+        <option>terry</option><option>christine</option><option>Deborah</option><option>Eddie</option><option>Erica</option>
+        <option>Kevein</option><option>Lewvis</option><option>Lexie</option><option>Nico</option><option>Stella</option>
+        <option>Esther</option><option>Devin</option><option>Gary</option>
+      </select>
+      <label>（選填）要設定密碼嗎？</label>
+      <input type="password" id="mypw" maxlength="20" placeholder="不設定可留空">
+      <label>寫下你的見證：</label>
+      <textarea id="testimonycontent" placeholder="請寫下神在你生命中的恩典" rows="5" required></textarea>
+      <button type="submit">送出見證，進入送祝福卡</button>
+    </form>
+    <p id="status"></p>
+  </div>
   <script>
-    function sendTestimony() {
-      const name = document.getElementById("name").value.trim();
-      const content = document.getElementById("testimony").value.trim();
-      if (!name || !content) {
-        document.getElementById("status").innerText = "請填寫名字和見證內容";
+    function sendTestimony(e){
+      e.preventDefault();
+      let name = document.getElementById('myname').value.trim();
+      let password = document.getElementById('mypw').value.trim();
+      let content = document.getElementById('testimonycontent').value.trim();
+      if(!name || !content){
+        document.getElementById('status').innerText = "請填齊名字與見證";
         return;
       }
-      fetch("https://你的ngrok-url/save_testimony", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, content })
+      localStorage.setItem('myname', name);
+      localStorage.setItem('mypw', password);
+
+      fetch("https://你的ngrok-url/submit_testimony",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({name, password, content})
       })
       .then(r=>r.json())
       .then(data=>{
-        document.getElementById("status").innerText = data.message;
-      }).catch(()=>{
-        document.getElementById("status").innerText = "連線失敗";
+        document.getElementById('status').innerText = data.message;
+        setTimeout(()=>location.href="index2.html", 1000);
+      })
+      .catch(()=>{
+        document.getElementById('status').innerText = "連線失敗";
       });
     }
   </script>
