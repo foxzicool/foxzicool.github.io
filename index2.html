@@ -1,11 +1,43 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-TW">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Document1</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>祈福牆 / 感恩牆</title>
+  <style>
+    .card {
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: 0 2px 8px #eee;
+      margin: 12px auto;
+      max-width: 340px;
+      padding: 20px;
+      font-family: 'Microsoft JhengHei', sans-serif;
+    }
+    .card .blesser { font-size:14px; color:#888;}
+    .card .bless-target { font-weight:bold; color:#247;}
+    .card .bless-content { margin:12px 0;}
+    .card .date { font-size:12px; color:#aaa;}
+  </style>
 </head>
 <body>
-    <h1>fox12</h1>
+  <h2>祈福牆 / 感恩牆</h2>
+  <div id="cards"></div>
+  <script>
+    // 實際上這應該用 fetch 取API
+    const data = [
+      {name: "Terry", target: "Christine", content: "願你天天有神的祝福～", date: "2024-07-09"},
+      {name: "gggg", target: "Christine", content: "願你平安順利！", date: "2024-07-09"},
+      {name: "hhhh", target: "Christine", content: "你很棒！", date: "2024-07-09"},
+      {name: "Terry", target: "Eddie", content: "Eddie加油！", date: "2024-07-09"},
+    ];
+    document.getElementById("cards").innerHTML = data.map(d=>`
+      <div class="card">
+        <div class="blesser">${d.name} 祝福 <span class="bless-target">${d.target}</span></div>
+        <div class="bless-content">${d.content}</div>
+        <div class="date">${d.date}</div>
+      </div>
+    `).join("");
+  </script>
 </body>
 </html>
