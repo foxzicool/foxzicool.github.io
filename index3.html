@@ -2,40 +2,63 @@
 <html lang="zh-TW">
 <head>
   <meta charset="UTF-8">
-  <title>公開恩典卡片一覽與下載</title>
+  <title>公開所有卡片一覽與下載</title>
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <style>
     body{font-family:'Microsoft JhengHei',sans-serif;}
-    .main{max-width:350px;margin:40px auto;}
+    .main{max-width:400px;margin:30px auto;}
     .card{background:#fff;border-radius:16px;box-shadow:0 2px 8px #eee;margin:14px 0;padding:18px;position:relative;}
     button{padding:6px 16px;margin-top:12px;}
+    .owner{font-weight:bold;color:#1e50a2;margin-bottom:4px;}
+    .bless-content{margin:6px 0;}
+    .title{font-size:20px;margin:12px 0 10px 0;}
+    .note{color:#888;font-size:13px;margin:0 0 16px 0;}
   </style>
 </head>
 <body>
   <div class="main">
-    <h2>公開恩典卡片一覽</h2>
+    <h2 class="title">恩典卡 & 見證卡下載</h2>
+    <p class="note">每人各一張「見證卡」與「恩典卡」（集合所有祝福）可自由下載</p>
     <div id="cards"></div>
   </div>
   <script>
     function loadCards(){
-      fetch("https://8035-61-231-26-86.ngrok-free.app/get_public_cards")
+      fetch("https://8035-61-231-26-86.ngrok-free.app/get_merged_cards")
         .then(r=>r.json())
-        .then(cards=>{
-          if(!cards.length){document.getElementById('cards').innerText="目前沒有公開卡片";return;}
-          document.getElementById('cards').innerHTML = cards.map((d,idx)=>`
-            <div class="card" id="card${idx}">
-              <div>
-                ${d.type === 'bless'
-                  ? `${d.sender} 祝福 <b>${d.target}</b>`
-                  : `${d.sender} 的見證`
-                }
-              </div>
-              <div style="margin:10px 0;">${d.content}</div>
-              <div style="font-size:12px;color:#aaa;">${d.date}</div>
-              <button onclick="downloadCard('card${idx}')">下載這張卡片圖片</button>
-            </div>
-          `).join("");
+        .then(all=>{
+          let html = "";
+          all.forEach((c,idx)=>{
+            if(c.card_type === "testimony"){
+              html += `
+                <div class="card" id="card${idx}">
+                  <div class="owner">${c.owner} 的見證卡</div>
+                  <div style="margin:10px 0;">
+                    ${c.contents.length
+                      ? c.contents.map((content,i)=>`<div class="bless-content">${content}<div style="color:#aaa;font-size:12px">${c.dates[i]}</div></div>`).join("")
+                      : `<div style="color:#aaa;">（尚未提交見證）</div>`
+                    }
+                  </div>
+                  <button onclick="downloadCard('card${idx}')">下載見證卡圖片</button>
+                </div>
+              `;
+            }
+            if(c.card_type === "bless"){
+              html += `
+                <div class="card" id="card${idx}">
+                  <div class="owner">${c.owner} 的恩典卡</div>
+                  <div style="margin:10px 0;">
+                    ${c.contents.length
+                      ? c.contents.map((content,i)=>`<div class="bless-content">${content}<div style="color:#aaa;font-size:12px">${c.dates[i]}</div></div>`).join("")
+                      : `<div style="color:#aaa;">（暫無人祝福）</div>`
+                    }
+                  </div>
+                  <button onclick="downloadCard('card${idx}')">下載恩典卡圖片</button>
+                </div>
+              `;
+            }
+          });
+          document.getElementById('cards').innerHTML = html;
         });
     }
 
@@ -44,11 +67,10 @@
       html2canvas(node,{scale:2}).then(canvas=>{
         let a = document.createElement("a");
         a.href = canvas.toDataURL();
-        a.download = "bless_card.png";
+        a.download = "grace_card.png";
         a.click();
       });
     }
-
     loadCards();
   </script>
 </body>
