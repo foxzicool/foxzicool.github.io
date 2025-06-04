@@ -2,14 +2,14 @@
 <html lang="zh-TW">
 <head>
   <meta charset="UTF-8">
-  <title>一年內生命見證上傳</title>
+  <title>三年內生命見證上傳</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
     #preview { width: 90vw; max-width: 300px; aspect-ratio: 3/4; position: relative; border-radius: 16px; overflow: hidden; margin-top: 24px; background: #fff; }
     #bgimg { width: 100%; height: 100%; object-fit: contain; position: absolute; left: 0; top: 0; z-index: 1; pointer-events: none; }
     #content { 
       position: absolute;
-      left: 4px;   /* 右移4px */
+      left: 4px;
       bottom: 0;
       margin: 20px;
       padding: 10px;
@@ -23,18 +23,55 @@
       min-height: 319px;
     }
     textarea {width: 90vw; max-width: 300px;}
+    #charCount { margin-right: 8px;}
   </style>
 </head>
 <body>
-  <h2>一年內生命見證</h2>
-  <textarea id="testimony" placeholder="請輸入你的見證..." rows="5"></textarea><br>
+  <h2>三年內生命見證</h2>
+  <textarea id="testimony" placeholder="請輸入你的見證..." rows="5" maxlength="100"></textarea><br>
+  <span id="charCount">剩餘 100 字</span>
+  <span id="lineCount">可再輸入 10 行</span><br>
   <button onclick="submitTestimony()">提交</button>
   <p id="status"></p>
   <script>
+    const textarea = document.getElementById("testimony");
+    const charCount = document.getElementById("charCount");
+    const lineCount = document.getElementById("lineCount");
+    const MAX_CHAR = 100;
+    const MAX_LINE = 10;
+
+    textarea.addEventListener("input", function() {
+      // 限制字數
+      if (this.value.length > MAX_CHAR) {
+        this.value = this.value.substring(0, MAX_CHAR);
+      }
+      // 限制行數
+      let lines = this.value.split('\n');
+      if (lines.length > MAX_LINE) {
+        this.value = lines.slice(0, MAX_LINE).join('\n');
+        lines = this.value.split('\n');
+      }
+      let remainChar = MAX_CHAR - this.value.length;
+      let remainLine = MAX_LINE - lines.length;
+      charCount.innerText = `剩餘 ${remainChar} 字`;
+      lineCount.innerText = remainLine >= 0 ? `可再輸入 ${remainLine} 行` : "已達行數上限";
+      charCount.style.color = remainChar < 0 ? "red" : "#222";
+      lineCount.style.color = remainLine <= 0 ? "red" : "#222";
+    });
+
     function submitTestimony() {
-      let content = document.getElementById("testimony").value.trim();
+      let content = textarea.value.trim();
+      let lines = content.split('\n');
       if (!content) {
         document.getElementById("status").innerText = "請輸入見證內容！";
+        return;
+      }
+      if (content.length > MAX_CHAR) {
+        document.getElementById("status").innerText = "最多只能輸入100字";
+        return;
+      }
+      if (lines.length > MAX_LINE) {
+        document.getElementById("status").innerText = "最多只能輸入10行";
         return;
       }
       fetch("https://rfc-caroline-pad-count.trycloudflare.com/submit_testimony3", {
@@ -42,7 +79,10 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content: content })
       })
-      .then(response => response.json())
+      .then(response => {
+        if(!response.ok) throw new Error("後端未回應");
+        return response.json();
+      })
       .then(data => {
         document.getElementById("status").innerText = data.message;
         setTimeout(() => location.href = "index3.html", 1000);
