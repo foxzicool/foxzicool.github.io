@@ -43,11 +43,12 @@
       localStorage.setItem('myname', name);
       localStorage.setItem('mypw', password);
 
-      fetch("https://你的ngrok-url/submit_testimony",{
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({name, password, content})
-      })
+fetch("https://8035-61-231-26-86.ngrok-free.app/submit_testimony",{
+  method:"POST",
+  headers:{"Content-Type":"application/json"},
+  body:JSON.stringify({name, password, content})
+})
+
       .then(r=>r.json())
       .then(data=>{
         document.getElementById('status').innerText = data.message;

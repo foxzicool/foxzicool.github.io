@@ -24,7 +24,7 @@
 
     function loadMyCards(){
       if(!myname){document.getElementById('mycards').innerText="沒有名字，請回首頁選名子";return;}
-      fetch("https://你的ngrok-url/get_my_cards",{
+      fetch("https://8035-61-231-26-86.ngrok-free.app/get_my_cards",{
         method:"POST",
         headers:{"Content-Type":"application/json"},
         body:JSON.stringify({name:myname, password:mypw})
