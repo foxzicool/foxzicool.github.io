@@ -96,19 +96,30 @@
           console.error("錯誤：", e);
         });
     }
-    function downloadSelected(){
-      cardsData.forEach((card,idx)=>{
-        if(document.getElementById("check"+idx).checked){
-          let node = document.getElementById("card"+idx);
-          html2canvas(node,{scale:2}).then(canvas=>{
-            let a = document.createElement("a");
-            a.href = canvas.toDataURL();
-            a.download = (card.type==='testimony1'?'one_year':'three_year')+"_card_"+(idx+1)+".png";
-            a.click();
-          });
-        }
+function downloadSelected(){
+  cardsData.forEach((card,idx)=>{
+    if(document.getElementById("check"+idx).checked){
+      let node = document.getElementById("card"+idx);
+      html2canvas(node,{scale:2}).then(origCanvas=>{
+        // 新建一個小一半的 canvas
+        let targetW = origCanvas.width / 2;
+        let targetH = origCanvas.height / 2;
+        let smallCanvas = document.createElement("canvas");
+        smallCanvas.width = targetW;
+        smallCanvas.height = targetH;
+        let ctx = smallCanvas.getContext("2d");
+        // 把大圖縮到小圖
+        ctx.drawImage(origCanvas, 0, 0, targetW, targetH);
+        // 下載縮小後的圖
+        let a = document.createElement("a");
+        a.href = smallCanvas.toDataURL();
+        a.download = (card.type==='testimony1'?'one_year':'three_year')+"_card_"+(idx+1)+".png";
+        a.click();
       });
     }
+  });
+}
+
     loadCards();
   </script>
 </body>
