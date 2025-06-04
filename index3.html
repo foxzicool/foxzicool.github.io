@@ -2,47 +2,58 @@
 <html lang="zh-TW">
 <head>
   <meta charset="UTF-8">
-  <title>生命見證卡片展示</title>
+  <title>所有生命見證卡片</title>
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <style>
     body{font-family:'Microsoft JhengHei',sans-serif;}
-    .main{max-width:400px;margin:30px auto;}
-    .card{background:#fff;border-radius:16px;box-shadow:0 2px 8px #eee;margin:14px 0;padding:18px;position:relative;}
-    .year{color:#1e50a2;}
-    button{padding:6px 16px;margin-top:12px;}
-    .title{font-size:20px;margin:12px 0 10px 0;}
+    .main{max-width:1200px;margin:30px auto;}
+    .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:20px;}
+    .card{background:#fff;border-radius:16px;box-shadow:0 2px 8px #eee;padding:18px;position:relative;min-height:160px;}
+    .type{color:#fff;background:#2175b8;padding:2px 8px;border-radius:7px;font-size:13px;position:absolute;left:12px;top:12px;}
+    .date{font-size:12px;color:#888;position:absolute;right:12px;top:12px;}
+    .content{margin:38px 0 0 0;word-break:break-all;}
+    .check{position:absolute;left:12px;bottom:10px;transform:scale(1.4);}
+    button{margin:18px auto 0 auto;display:block;padding:8px 28px;}
+    @media (max-width:900px) {.grid{grid-template-columns:repeat(2,1fr);}}
+    @media (max-width:600px) {.grid{grid-template-columns:repeat(1,1fr);}}
   </style>
 </head>
 <body>
   <div class="main">
-    <h2 class="title">所有生命見證卡片</h2>
-    <div id="cards"></div>
+    <h2>所有生命見證卡片（可多選下載）</h2>
+    <div id="cards" class="grid"></div>
+    <button onclick="downloadSelected()">下載所選卡片圖片</button>
   </div>
   <script>
+    let cardsData = [];
     function loadCards(){
-      fetch("https://你的ngrok-url/get_all_cards")
+      fetch("https://6782-61-231-26-86.ngrok-free.app/get_all_cards")
         .then(r=>r.json())
         .then(cards=>{
+          cardsData = cards;
           if(!cards.length){document.getElementById('cards').innerText="目前沒有卡片";return;}
-          let html = cards.map((d,idx)=>`
+          document.getElementById('cards').innerHTML = cards.map((d,idx)=>`
             <div class="card" id="card${idx}">
-              <div class="year">${d.type === 'testimony1' ? '【一年內】' : '【五年內】'}</div>
-              <div style="margin:10px 0;">${d.content}</div>
-              <div style="font-size:12px;color:#aaa;">${d.date}</div>
-              <button onclick="downloadCard('card${idx}')">下載卡片圖片</button>
+              <span class="type">${d.type==='testimony1'?'一年內':'三年內'}</span>
+              <span class="date">${d.date}</span>
+              <div class="content">${d.content}</div>
+              <input type="checkbox" class="check" id="check${idx}">
             </div>
           `).join("");
-          document.getElementById('cards').innerHTML = html;
         });
     }
-    function downloadCard(id){
-      let node = document.getElementById(id);
-      html2canvas(node,{scale:2}).then(canvas=>{
-        let a = document.createElement("a");
-        a.href = canvas.toDataURL();
-        a.download = "life_card.png";
-        a.click();
+    function downloadSelected(){
+      cardsData.forEach((card,idx)=>{
+        if(document.getElementById("check"+idx).checked){
+          let node = document.getElementById("card"+idx);
+          html2canvas(node,{scale:2}).then(canvas=>{
+            let a = document.createElement("a");
+            a.href = canvas.toDataURL();
+            a.download = (card.type==='testimony1'?'one_year':'three_year')+"_card_"+(idx+1)+".png";
+            a.click();
+          });
+        }
       });
     }
     loadCards();

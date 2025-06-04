@@ -6,7 +6,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <style>
-    /* ...保持你原本的樣式... */
+    #preview { width: 90vw; max-width: 300px; aspect-ratio: 3/4; position: relative; border-radius: 16px; overflow: hidden; margin-top: 24px; background: #fff; }
+    #bgimg { width: 100%; height: 100%; object-fit: contain; position: absolute; left: 0; top: 0; z-index: 1; pointer-events: none; }
+    #content { position: absolute; left: 0; right: 0; bottom: 0; margin: 20px; padding: 10px; background: rgba(0,0,0,0.20); border-radius: 8px; color: #222; font-size: 20px; z-index: 2; word-break: break-all; font-family: 'Microsoft JhengHei', sans-serif; text-align: left; min-height: 80px; }
+    #downloadLink { display: none; margin-top: 16px; font-size: 16px; color: #2067b2; text-decoration: underline; }
+    textarea {width: 90vw; max-width: 300px;}
+    #imgResultArea img { width: 100%; max-width: 300px; border-radius: 16px; margin-top: 16px; display: block; }
   </style>
 </head>
 <body>
@@ -20,19 +25,17 @@
   </div>
   <div id="imgResultArea"></div>
   <a id="downloadLink" download="testimony.png">下載圖片</a>
-  <p style="color:red;">產生圖片後，<b>長按圖片</b>可以存到相簿</p>
   <script>
     document.getElementById("testimony").addEventListener("input", function() {
       document.getElementById("content").innerText = this.value || "你的見證會顯示在這裡";
     });
-
     function submitAndGenerate() {
       let content = document.getElementById("testimony").value.trim();
       if (!content) {
         document.getElementById("status").innerText = "請輸入見證內容！";
         return;
       }
-      fetch("https://6782-61-231-26-86.ngrok-free.app/submit_testimony1", {
+      fetch(" https://6782-61-231-26-86.ngrok-free.app/submit_testimony3", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content: content })
@@ -51,7 +54,6 @@
         document.getElementById("status").innerText = "後端連不到";
       });
     }
-
     function generateImage() {
       const preview = document.getElementById("preview");
       html2canvas(preview, { scale: 2 }).then(canvas => {
