@@ -37,7 +37,7 @@
         document.getElementById("status").innerText = "請輸入見證內容！";
         return;
       }
-      fetch(" https://cfa6-61-231-26-86.ngrok-free.app/submit_testimony3", {
+      fetch(" https://rfc-caroline-pad-count.trycloudflare.com/submit_testimony3", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content: content })

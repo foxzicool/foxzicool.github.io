@@ -28,7 +28,7 @@
   <script>
     let cardsData = [];
     function loadCards(){
-      fetch("https://cfa6-61-231-26-86.ngrok-free.app/get_all_cards")
+      fetch("https://rfc-caroline-pad-count.trycloudflare.com/get_all_cards")
         .then(r=>{
           if(!r.ok) throw new Error("伺服器未回應正確結果");
           return r.json();
