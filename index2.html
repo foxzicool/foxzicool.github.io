@@ -45,7 +45,7 @@
       .then(response => response.json())
       .then(data => {
         document.getElementById("status").innerText = data.message;
-        setTimeout(() => location.href = "index2.html", 1000);
+        setTimeout(() => location.href = "index3.html", 1000);
       })
       .catch(error => {
         document.getElementById("status").innerText = "後端連不到";

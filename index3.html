@@ -29,10 +29,16 @@
     let cardsData = [];
     function loadCards(){
       fetch("https://6782-61-231-26-86.ngrok-free.app/get_all_cards")
-        .then(r=>r.json())
+        .then(r=>{
+          if(!r.ok) throw new Error("伺服器未回應正確結果");
+          return r.json();
+        })
         .then(cards=>{
           cardsData = cards;
-          if(!cards.length){document.getElementById('cards').innerText="目前沒有卡片";return;}
+          if(!cards.length){
+            document.getElementById('cards').innerText="目前沒有卡片";
+            return;
+          }
           document.getElementById('cards').innerHTML = cards.map((d,idx)=>`
             <div class="card" id="card${idx}">
               <span class="type">${d.type==='testimony1'?'一年內':'三年內'}</span>
@@ -41,6 +47,10 @@
               <input type="checkbox" class="check" id="check${idx}">
             </div>
           `).join("");
+        })
+        .catch(e=>{
+          document.getElementById('cards').innerHTML = "<span style='color:red'>無法取得資料，請確認後端有開、網址正確</span>";
+          console.error("錯誤：", e);
         });
     }
     function downloadSelected(){
