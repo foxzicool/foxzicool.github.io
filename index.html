@@ -27,7 +27,7 @@
   </style>
 </head>
 <body>
-  <h2>一年內生命見證(由於卡片大小限制100字)</h2>
+  <h2>在這一年我要感謝神or小組員的事情(由於卡片大小限制100字)</h2>
   <textarea id="testimony" placeholder="請輸入你的見證..." rows="5" maxlength="100"></textarea><br>
   <span id="charCount">剩餘 100 字</span>
   <button onclick="submitTestimony()">提交</button>
@@ -62,7 +62,7 @@
       let content = textarea.value.trim();
       let lines = content.split('\n');
       if (!content) {
-        document.getElementById("status").innerText = "請輸入見證內容！";
+        document.getElementById("status").innerText = "請輸入感謝內容！";
         return;
       }
       if (content.length > MAX_CHAR) {
