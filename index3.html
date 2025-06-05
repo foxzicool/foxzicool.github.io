@@ -11,18 +11,20 @@
     .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:20px;}
     .card-block{display:flex;flex-direction:column;align-items:center;}
     .card-preview {
-      width: 300px;
-      height: 400px;
+      width: 100%;
+      max-width: 300px;
+      aspect-ratio: 3/4;
       position: relative;
       border-radius: 16px;
       overflow: hidden;
       background: #fff;
       box-shadow: 0 2px 8px #eee;
+      min-height: 340px;
     }
     .bgimg {
       width: 100%;
       height: 100%;
-      object-fit: cover;
+      object-fit: contain;
       position: absolute;
       left: 0; top: 0;
       z-index: 1;
@@ -35,7 +37,7 @@
       right: 0;
       top: 0;
       margin: 20px;
-      padding: 25px 10px 10px 10px; /* 讓文字更偏上且不會蓋到頭 */
+      padding: 20px 10px 10px 10px;
       border-radius: 8px;
       color: #222;
       font-size: 20px;
@@ -65,7 +67,6 @@
   <script>
     let cardsData = [];
     const bgImgSrc = "https://foxzicool.github.io/pic.svg";
-
     function loadCards(){
       fetch("https://fabulous-organisms-thomas-creatures.trycloudflare.com/get_all_cards")
         .then(r=>{
@@ -80,7 +81,7 @@
           }
           document.getElementById('cards').innerHTML = cards.map((d,idx)=>`
             <div class="card-block">
-              <div class="card-preview" id="card${idx}" style="width:300px;height:400px">
+              <div class="card-preview" id="card${idx}">
                 <img class="bgimg" src="${bgImgSrc}" alt="背景圖">
                 <span class="type">${d.type==='testimony1'?'一年內':'三年內'}</span>
                 <span class="date">${d.date ? d.date.slice(0,10) : ''}</span>
@@ -95,16 +96,11 @@
           console.error("錯誤：", e);
         });
     }
-
     function downloadSelected(){
       cardsData.forEach((card,idx)=>{
         if(document.getElementById("check"+idx).checked){
           let node = document.getElementById("card"+idx);
-          html2canvas(node, {
-            width: 300,
-            height: 400,
-            scale: 2   // PNG更清晰
-          }).then(canvas=>{
+          html2canvas(node,{scale:2}).then(canvas=>{
             let a = document.createElement("a");
             a.href = canvas.toDataURL();
             a.download = (card.type==='testimony1'?'one_year':'three_year')+"_card_"+(idx+1)+".png";
