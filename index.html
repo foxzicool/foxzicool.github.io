@@ -16,11 +16,12 @@
     }
     h2 {
       margin: 36px 0 18px 0;
-      font-size: 1.25rem;
+      font-size: 1.15rem;
       color: #234;
       text-align: center;
       letter-spacing: 1px;
       font-weight: 600;
+      line-height: 1.6;
     }
     textarea {
       width: 92vw;
@@ -46,10 +47,12 @@
       width: 100%;
       max-width: 340px;
       display: flex;
-      justify-content: space-between;
+      justify-content: flex-start;
+      align-items: center;
       font-size: 14px;
       color: #666;
       margin-bottom: 8px;
+      gap: 16px;
       user-select: none;
     }
     button {
@@ -87,14 +90,17 @@
   </style>
 </head>
 <body>
-  <h2>在這一年我要感謝神 or 小組員的事情<br><span style="font-weight:400;font-size:14px;">（卡片大小限制 100 字，最多 10 行）</span></h2>
-  <textarea id="testimony" placeholder="我要感謝..." rows="6" maxlength="100"></textarea>
+  <h2>
+    在這一年我要感謝神 or 小組員的事情<br>
+    <span style="font-weight:400;font-size:14px;">（卡片大小限制 100 字，最多 10 行）</span>
+  </h2>
+  <textarea id="testimony" placeholder="我要感謝..." rows="5" maxlength="100"></textarea><br>
   <div class="count-info">
     <span id="charCount">剩餘 100 字</span>
-    <span id="lineCount">可再輸入 10 行</span>
+    <span id="lineCount"></span>
   </div>
   <button onclick="submitTestimony()">提交</button>
-  <div id="status"></div>
+  <p id="status"></p>
   <script>
     const textarea = document.getElementById("testimony");
     const charCount = document.getElementById("charCount");
