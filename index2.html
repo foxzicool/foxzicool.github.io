@@ -135,7 +135,7 @@
         document.getElementById("status").innerText = "最多只能輸入100字";
         return;
       }
-      fetch("https://ana-aerospace-pending-olympic.trycloudflare.com /submit_testimony3", {
+      fetch("https://ana-aerospace-pending-olympic.trycloudflare.com/submit_testimony3", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content: content })
