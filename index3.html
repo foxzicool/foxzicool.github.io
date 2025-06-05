@@ -68,7 +68,7 @@
     let cardsData = [];
     const bgImgSrc = "https://foxzicool.github.io/pic.svg";
     function loadCards(){
-      fetch("https://ana-aerospace-pending-olympic.trycloudflare.com/get_all_cards")
+      fetch("https://ana-aerospace-pending-olympic.trycloudflare.com /get_all_cards")
         .then(r=>{
           if(!r.ok) throw new Error("伺服器未回應正確結果");
           return r.json();
