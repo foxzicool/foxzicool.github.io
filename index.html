@@ -123,10 +123,8 @@
       let remainLine = MAX_LINE - lines.length;
       charCount.innerText = `剩餘 ${remainChar} 字`;
       lineCount.innerText = remainLine >= 0 ? `可再輸入 ${remainLine} 行` : "已達行數上限";
-      charCount.style.color = remainChar < 10 ? "#e67e22" : "#5695fa";
-      lineCount.style.color = remainLine <= 2 ? "#e67e22" : "#52b7c0";
-      if (remainChar < 0) charCount.style.color = "#d13c3c";
-      if (remainLine < 0) lineCount.style.color = "#d13c3c";
+      charCount.style.color = remainChar < 0 ? "red" : "#222";
+      lineCount.style.color = remainLine <= 0 ? "red" : "#222";
     });
 
     function submitTestimony() {
@@ -154,12 +152,10 @@
         return response.json();
       })
       .then(data => {
-        document.getElementById("status").style.color = "#22aa55";
         document.getElementById("status").innerText = data.message;
-        setTimeout(() => location.href = "index2.html", 1200);
+        setTimeout(() => location.href = "index2.html", 1000);
       })
       .catch(error => {
-        document.getElementById("status").style.color = "#d13c3c";
         document.getElementById("status").innerText = "後端連不到";
       });
     }
