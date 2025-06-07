@@ -67,6 +67,7 @@
   <script>
     let cardsData = [];
     const bgImgSrc = "https://foxzicool.github.io/pic.svg";
+
     function loadCards(){
       fetch("https://posting-retro-liable-mountains.trycloudflare.com/get_all_cards")
         .then(r=>{
@@ -109,7 +110,10 @@
         }
       });
     }
+
     loadCards();
+    setInterval(loadCards, 5000);
+
   </script>
 </body>
 </html>
