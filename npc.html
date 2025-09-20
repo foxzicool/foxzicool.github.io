@@ -2,10 +2,10 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Plain 3200×3200 | NPC x4 | Obstacles | Arrow</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no" />
+  <title>Plain 3200×3200 | NPC x4 | Obstacles | Arrow | Mobile Swipe</title>
   <style>
-    body { margin:0; background:#111; display:grid; place-items:center; height:100vh; }
+    body { margin:0; background:#111; display:grid; place-items:center; height:100vh; touch-action:none; }
     #game { box-shadow:0 8px 24px rgba(0,0,0,.4); }
     .hud { position:fixed; left:12px; top:12px; color:#fff; font:14px system-ui,Segoe UI,Arial;
            background:rgba(0,0,0,.55); padding:8px 10px; border-radius:8px; user-select:none; white-space:pre-line; }
@@ -15,7 +15,8 @@
 <body>
 <div id="game"></div>
 <div class="hud" id="hud">
-  方向鍵 / WASD 移動、E 對話
+  PC：方向鍵 / WASD，E 對話
+  <div>手機：按住畫面滑動移動（放手停止）</div>
   <div id="sizeLabel"></div>
   <div id="assetStatus"></div>
 </div>
@@ -42,20 +43,31 @@ class MainScene extends Phaser.Scene {
     a.beginPath(); a.moveTo(28,18); a.lineTo(10,8); a.lineTo(10,28); a.closePath(); a.fill(); a.stroke();
     arrow.refresh();
 
+    // backplate（半透明底板顏色）
+    const mkPlate = (key, color) => {
+      const t = this.textures.createCanvas(key, 36, 36);
+      const c = t.getContext();
+      c.clearRect(0,0,36,36);
+      c.fillStyle = color;  // e.g. 'rgba(30,144,255,0.25)'
+      c.beginPath(); c.ellipse(18, 18, 16, 12, 0, 0, Math.PI*2); c.fill();
+      t.refresh();
+    };
+    mkPlate('plate_player', 'rgba(30,144,255,0.25)');
+    mkPlate('plate_npc',    'rgba(255,179,71,0.25)');
+    mkPlate('plate_tree',   'rgba(46,125,50,0.25)');
+    mkPlate('plate_rock',   'rgba(128,128,128,0.25)');
+
     // 嘗試多路徑載入（GitHub Pages 大小寫敏感）
     this.load.image('player_main', 'assets/player.png');
     this.load.image('player_alt',  'player.png');
     this.load.image('npc_main',    'assets/npc.png');
     this.load.image('npc_alt',     'npc.png');
-
     this.load.image('tree_main',   'assets/tree.png');
     this.load.image('tree_alt',    'tree.png');
     this.load.image('rock_main',   'assets/rock.png');
     this.load.image('rock_alt',    'rock.png');
 
     this.assetStatus = [];
-
-    // 載入完成後：若缺檔，建立內建備援紋理
     this.load.on('complete', () => {
       const ensure = (wantKey, candidates, painter) => {
         let okKey = null;
@@ -63,18 +75,15 @@ class MainScene extends Phaser.Scene {
         if (!okKey) {
           const t = this.textures.createCanvas(wantKey, 32, 32);
           painter(t.getContext()); t.refresh();
-          this.assetStatus.push(`${wantKey}: fallback (canvas)`);
+          this.assetStatus.push(`${wantKey}: fallback(canvas)`);
           return wantKey;
         } else {
-          // 用 found 的 key 當作最終 key 的 Alias
-          // Phaser 沒內建 rename；我們就記住 mapping
           this.assetStatus.push(`${wantKey} ← ${okKey}`);
           this[wantKey + '_resolved'] = okKey;
           return okKey;
         }
       };
-
-      // 內建圖樣（看得到人物）
+      // 內建圖樣
       ensure('player', ['player_main','player_alt'], ctx => {
         ctx.clearRect(0,0,32,32); ctx.fillStyle='#1e90ff'; ctx.beginPath(); ctx.arc(16,16,12,0,Math.PI*2); ctx.fill();
       });
@@ -91,44 +100,51 @@ class MainScene extends Phaser.Scene {
         ctx.fillStyle='rgba(255,255,255,0.25)'; ctx.beginPath(); ctx.ellipse(12,14,6,4,0,0,Math.PI*2); ctx.fill();
         ctx.strokeStyle='rgba(0,0,0,0.3)'; ctx.lineWidth=1; ctx.beginPath(); ctx.ellipse(16,18,13,9,0,0,Math.PI*2); ctx.stroke();
       });
-
-      // 在 HUD 顯示載入結果
-      const el = document.getElementById('assetStatus');
-      el.textContent = 'Assets: \n' + this.assetStatus.join('\n');
+      document.getElementById('assetStatus').textContent = 'Assets:\n' + this.assetStatus.join('\n');
     });
   }
 
   create() {
-    // === 固定地圖 3200×3200（100×100 tiles × 32） ===
+    // 地圖 3200×3200（100×100 tiles × 32）
     const tileW=32,tileH=32, tilesX=100, tilesY=100;
     this.map = this.make.tilemap({ tileWidth: tileW, tileHeight: tileH, width: tilesX, height: tilesY });
     const tileset = this.map.addTilesetImage('grass','grass',tileW,tileH,0,0,1);
     this.ground = this.map.createBlankLayer('ground', tileset, 0, 0);
     this.ground.fill(1);
 
-    // 物理邊界 & 相機
+    // 物理 & 相機
     this.physics.world.setBounds(0,0,this.map.widthInPixels,this.map.heightInPixels);
     this.cameras.main.setBounds(0,0,this.map.widthInPixels,this.map.heightInPixels);
     this.cameras.main.setRoundPixels(true);
 
-    // 解析實際可用貼圖 key（若前面找到 alt，就用 alt）
     const useKey = k => this[k + '_resolved'] || k;
 
     // 玩家
     const pImg = this.textures.get(useKey('player')).getSourceImage();
     const pScale = 32 / pImg.width;
     const startX = this.map.widthInPixels/2, startY = this.map.heightInPixels/2;
-    this.player = this.physics.add.image(startX,startY,useKey('player')).setScale(pScale).setDepth(5);
+    this.player = this.physics.add.image(startX,startY,useKey('player')).setScale(pScale).setDepth(6);
     this.player.setCollideWorldBounds(true);
     this.player.body.setSize(this.player.displayWidth*0.6, this.player.displayHeight*0.8, true);
 
-    // 相機跟隨
-    this.cameras.main.startFollow(this.player, true, 0.2, 0.2);
+    // 玩家 backplate（彩色底板）
+    this.playerPlate = this.add.image(this.player.x, this.player.y, 'plate_player').setDepth(5);
 
-    // 群組（靜態剛體）
+    // 相機跟隨；手機放大一點
+    this.cameras.main.startFollow(this.player, true, 0.22, 0.22);
+    if (this.sys.game.device.os.android || this.sys.game.device.os.iOS) {
+      this.cameras.main.setZoom(1.2);
+    }
+
+    // 群組
     this.npcs  = this.physics.add.staticGroup();
     this.trees = this.physics.add.staticGroup();
     this.rocks = this.physics.add.staticGroup();
+
+    // plate 陣列（同步位置用）
+    this.npcPlates = [];
+    this.treePlates = [];
+    this.rockPlates = [];
 
     // NPC = 4 位
     this.spawnNPCs(4, useKey('npc'));
@@ -141,22 +157,39 @@ class MainScene extends Phaser.Scene {
     this.physics.add.collider(this.player, this.rocks);
     this.physics.add.collider(this.player, this.npcs);
 
-    // 箭頭（指向最近 NPC）
+    // 箭頭
     this.arrow = this.add.image(0,0,'arrow').setOrigin(0.5).setDepth(20).setScale(0.9);
 
     // 陰影 Graphics
-    this.shadowGfx = this.add.graphics().setDepth(4);
+    this.shadowGfx = this.add.graphics().setDepth(5);
 
-    // 對話 UI（固定螢幕左下）
+    // 對話 UI
     this.interactRadius = 42;
     this.interactHint = this.add.text(0,0,'按 E 對話',{fontSize:'16px',color:'#fff',backgroundColor:'#0008',padding:{x:8,y:4}}).setDepth(30).setVisible(false);
     this.dialogBox  = this.add.rectangle(260, this.game.config.height-60, 420, 90, 0x000000, 0.75).setStrokeStyle(2,0xffffff).setDepth(30).setScrollFactor(0).setVisible(false);
     this.dialogText = this.add.text(70, this.game.config.height-95, '', {fontSize:'18px', color:'#fff', wordWrap:{width:400}}).setDepth(31).setScrollFactor(0).setVisible(false);
 
-    // 鍵盤
+    // PC 鍵盤
     this.cursors = this.input.keyboard.createCursorKeys();
     this.keys = this.input.keyboard.addKeys('W,A,S,D,E');
     this.speed = 240;
+
+    // 手機滑動控制（按住->方向，放手->停止）
+    this.pointerActive = false;
+    this.swipeStart = null;
+    this.input.on('pointerdown', (p)=>{ this.pointerActive = true; this.swipeStart = new Phaser.Math.Vector2(p.worldX, p.worldY); });
+    this.input.on('pointermove', (p)=>{
+      if (!this.pointerActive) return;
+      // 用螢幕座標更順手（方向相對螢幕）
+      const dx = p.position.x - (p.downX ?? p.positionDown.x);
+      const dy = p.position.y - (p.downY ?? p.positionDown.y);
+      const dead = 8; // 死區
+      let vx = 0, vy = 0;
+      if (Math.abs(dx) > dead) vx = Math.sign(dx);
+      if (Math.abs(dy) > dead) vy = Math.sign(dy);
+      this.touchDir = new Phaser.Math.Vector2(vx, vy).normalize();
+    });
+    this.input.on('pointerup', ()=>{ this.pointerActive = false; this.touchDir = null; });
 
     // HUD
     document.getElementById('sizeLabel').textContent =
@@ -171,18 +204,24 @@ class MainScene extends Phaser.Scene {
 
   spawnNPCs(count, npcKey){
     this.npcs.clear(true,true);
+    this.npcPlates.forEach(p=>p.destroy()); this.npcPlates = [];
     const nImg = this.textures.get(npcKey).getSourceImage();
     const nScale = 32 / nImg.width;
     for (let i=0;i<count;i++){
       const p = this.randomPos(96);
-      const npc = this.npcs.create(p.x,p.y,npcKey).setScale(nScale).setDepth(5);
+      const npc = this.npcs.create(p.x,p.y,npcKey).setScale(nScale).setDepth(6);
       npc.refreshBody();
       npc.data = { name:`村民 #${i+1}` };
+      const plate = this.add.image(p.x, p.y, 'plate_npc').setDepth(5.2);
+      this.npcPlates.push({ sprite:npc, plate });
     }
   }
 
   scatterDecor(treeKey, rockKey){
     this.trees.clear(true,true); this.rocks.clear(true,true);
+    this.treePlates.forEach(p=>p.destroy()); this.rockPlates.forEach(p=>p.destroy());
+    this.treePlates = []; this.rockPlates = [];
+
     const treeCount = 55;
     const rockCount = 45;
     const tImg = this.textures.get(treeKey).getSourceImage();
@@ -199,19 +238,23 @@ class MainScene extends Phaser.Scene {
       const p = this.randomPos(64);
       if (Phaser.Math.Distance.Between(p.x,p.y, this.map.widthInPixels/2, this.map.heightInPixels/2) < minDistFromPlayer) continue;
       if (tooClose(p.x,p.y, npcPos(), minDistFromNPC)) continue;
-      const t = this.trees.create(p.x,p.y,treeKey).setScale(tBaseScale).setDepth(5);
+      const t = this.trees.create(p.x,p.y,treeKey).setScale(tBaseScale).setDepth(6);
       t.refreshBody(); placed++;
+      const plate = this.add.image(p.x, p.y, 'plate_tree').setDepth(5.2);
+      this.treePlates.push(plate);
     }
 
-    // 石
+    // 石（放大 + 隨機旋轉/縮放）
     for (let i=0, placed=0; placed<rockCount && i<rockCount*25; i++){
       const p = this.randomPos(64);
       if (Phaser.Math.Distance.Between(p.x,p.y, this.map.widthInPixels/2, this.map.heightInPixels/2) < minDistFromPlayer) continue;
       if (tooClose(p.x,p.y, npcPos(), minDistFromNPC)) continue;
       const s = rBaseScale * Phaser.Math.FloatBetween(0.9, 1.2);
-      const r = this.rocks.create(p.x,p.y,rockKey).setScale(s).setDepth(5);
+      const r = this.rocks.create(p.x,p.y,rockKey).setScale(s).setDepth(6);
       r.setRotation(Phaser.Math.FloatBetween(-0.35, 0.35));
       r.refreshBody(); placed++;
+      const plate = this.add.image(p.x, p.y, 'plate_rock').setDepth(5.2).setScale(Math.max(1, s*1.1));
+      this.rockPlates.push(plate);
     }
   }
 
@@ -228,13 +271,37 @@ class MainScene extends Phaser.Scene {
     this.rocks.getChildren().forEach(r => drawEllipse(r.x, r.y, 28 * r.scaleX, 14 * r.scaleY));
   }
 
+  updatePlates(){
+    // plate 位置跟著對應物件
+    this.playerPlate.setPosition(this.player.x, this.player.y);
+    this.npcPlates.forEach(o => o.plate.setPosition(o.sprite.x, o.sprite.y));
+    this.treePlates.forEach((plate, i) => {
+      const t = this.trees.getChildren()[i];
+      if (t) plate.setPosition(t.x, t.y);
+    });
+    this.rockPlates.forEach((plate, i) => {
+      const r = this.rocks.getChildren()[i];
+      if (r) plate.setPosition(r.x, r.y);
+    });
+  }
+
   update() {
+    // PC 鍵盤
     const v = 240;
-    this.player.body.setVelocity(0);
-    if (this.cursors.left.isDown || this.keys.A.isDown)  this.player.body.setVelocityX(-v);
-    if (this.cursors.right.isDown|| this.keys.D.isDown)  this.player.body.setVelocityX(v);
-    if (this.cursors.up.isDown   || this.keys.W.isDown)  this.player.body.setVelocityY(-v);
-    if (this.cursors.down.isDown || this.keys.S.isDown)  this.player.body.setVelocityY(v);
+    let vx = 0, vy = 0;
+    if (this.cursors.left.isDown || this.keys.A.isDown)  vx -= 1;
+    if (this.cursors.right.isDown|| this.keys.D.isDown)  vx += 1;
+    if (this.cursors.up.isDown   || this.keys.W.isDown)  vy -= 1;
+    if (this.cursors.down.isDown || this.keys.S.isDown)  vy += 1;
+
+    // 手機滑動方向覆蓋鍵盤
+    if (this.touchDir) {
+      vx = this.touchDir.x; vy = this.touchDir.y;
+    }
+
+    const dir = new Phaser.Math.Vector2(vx, vy);
+    if (dir.lengthSq() > 0) dir.normalize().scale(v);
+    this.player.body.setVelocity(dir.x, dir.y);
 
     // 最近 NPC + 箭頭
     const list = this.npcs.getChildren();
@@ -248,7 +315,7 @@ class MainScene extends Phaser.Scene {
     // 對話
     if (nearest && minD < 42){
       this.interactHint?.setVisible(true).setPosition(this.player.x - 30, this.player.y - 50);
-      if (Phaser.Input.Keyboard.JustDown(this.keys.E)){
+      if (Phaser.Input.Keyboard.JustDown(this.keys.E) || (this.pointerActive && this.input.pointer1.isDown && this.input.pointer1.justDown)) {
         const show = !this.dialogBox.visible;
         this.dialogBox.setVisible(show);
         this.dialogText.setText(`${nearest.data?.name || 'NPC'}：哈囉，勇者！這是示範對話。\n（再按 E 關閉/開啟）`).setVisible(show);
@@ -258,8 +325,9 @@ class MainScene extends Phaser.Scene {
       if (this.dialogBox.visible){ this.dialogBox.setVisible(false); this.dialogText.setVisible(false); }
     }
 
-    // 陰影
+    // 陰影與底板位置
     this.drawShadows();
+    this.updatePlates();
   }
 }
 
