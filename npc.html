@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no" />
+  <title>Plain 3200×3200 | NPC x4 | Obstacles | Arrow | Mobile Joystick</title>
+  <style>
+    body { margin:0; background:#111; display:grid; place-items:center; height:100vh; touch-action:none; }
+    #game { box-shadow:0 8px 24px rgba(0,0,0,.4); }
+    .hud { position:fixed; left:12px; top:12px; color:#fff; font:14px system-ui,Segoe UI,Arial;
+           background:rgba(0,0,0,.55); padding:8px 10px; border-radius:8px; user-select:none; white-space:pre-line; }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/phaser@3/dist/phaser.min.js"></script>
+</head>
+<body>
+<div id="game"></div>
+<div class="hud" id="hud">
+  PC：方向鍵 / WASD，E 對話
+  <div>手機：按住畫面產生搖桿，拖曳移動（放手停止）</div>
+  <div id="sizeLabel"></div>
+  <div id="assetStatus"></div>
+</div>
+
+<script>
+class MainScene extends Phaser.Scene {
+  constructor(){ super('main'); }
+
+  preload() {
+    // 草地 32x32
+    const grass = this.textures.createCanvas('grass', 32, 32);
+    const g = grass.getContext();
+    g.fillStyle = '#3aa64a'; g.fillRect(0,0,32,32);
+    for (let i=0;i<160;i++){ const x=(Math.random()*32)|0,y=(Math.random()*32)|0;
+      g.fillStyle = `rgba(0,0,0,${0.07+Math.random()*0.12})`; g.fillRect(x,y,1,1);
+    }
+    g.fillStyle = 'rgba(255,255,255,0.05)'; g.fillRect(2,2,5,1); g.fillRect(12,5,6,1);
+    grass.refresh();
+
+    // 箭頭（朝右）
+    const arrow = this.textures.createCanvas('arrow', 36, 36);
+    const a = arrow.getContext();
+    a.clearRect(0,0,36,36); a.fillStyle='#ffe066'; a.strokeStyle='#000'; a.lineWidth=2;
+    a.beginPath(); a.moveTo(28,18); a.lineTo(10,8); a.lineTo(10,28); a.closePath(); a.fill(); a.stroke();
+    arrow.refresh();
+
+    // 嘗試多路徑載入（大小寫 / 路徑誤差都有備案）
+    this.load.image('player_main', 'assets/player.png');
+    this.load.image('player_alt',  'player.png');
+    this.load.image('npc_main',    'assets/npc.png');
+    this.load.image('npc_alt',     'npc.png');
+    this.load.image('tree_main',   'assets/tree.png');
+    this.load.image('tree_alt',    'tree.png');
+    this.load.image('rock_main',   'assets/rock.png');
+    this.load.image('rock_alt',    'rock.png');
+
+    this.assetStatus = [];
+    this.load.on('complete', () => {
+      const ensure = (wantKey, candidates, painter) => {
+        let okKey = null;
+        for (const k of candidates) if (this.textures.exists(k)) { okKey = k; break; }
+        if (!okKey) {
+          const t = this.textures.createCanvas(wantKey, 48, 48);
+          painter(t.getContext()); t.refresh();
+          this.assetStatus.push(`${wantKey}: fallback(canvas)`);
+          return wantKey;
+        } else {
+          this.assetStatus.push(`${wantKey} ← ${okKey}`);
+          this[wantKey + '_resolved'] = okKey;
+          return okKey;
+        }
+      };
+      // 內建備援：透明背景、簡易風格
+      ensure('player', ['player_main','player_alt'], ctx => {
+        ctx.clearRect(0,0,48,48);
+        ctx.fillStyle='#1e90ff'; ctx.beginPath(); ctx.ellipse(24,34,14,12,0,0,Math.PI*2); ctx.fill(); // 身體
+        ctx.fillStyle='rgb(235,205,175)'; ctx.beginPath(); ctx.ellipse(24,16,8,6,0,0,Math.PI*2); ctx.fill(); // 頭
+      });
+      ensure('npc',    ['npc_main','npc_alt'], ctx => {
+        ctx.clearRect(0,0,48,48);
+        ctx.fillStyle='#ffb347'; ctx.beginPath(); ctx.ellipse(24,34,14,12,0,0,Math.PI*2); ctx.fill();
+        ctx.fillStyle='rgb(240,210,185)'; ctx.beginPath(); ctx.ellipse(24,16,8,6,0,0,Math.PI*2); ctx.fill();
+      });
+      ensure('tree',   ['tree_main','tree_alt'], ctx => {
+        ctx.clearRect(0,0,48,48);
+        ctx.fillStyle='#2e7d32'; ctx.beginPath(); ctx.ellipse(24,24,18,18,0,0,Math.PI*2); ctx.fill();
+        ctx.fillStyle='rgba(255,255,255,0.18)'; ctx.beginPath(); ctx.ellipse(18,18,8,6,0,0,Math.PI*2); ctx.fill();
+        ctx.fillStyle='#8d6e63'; ctx.fillRect(22,26,4,10);
+      });
+      ensure('rock',   ['rock_main','rock_alt'], ctx => {
+        ctx.clearRect(0,0,48,48);
+        ctx.fillStyle='#8a8a8a'; ctx.beginPath(); ctx.ellipse(24,28,16,10,0,0,Math.PI*2); ctx.fill();
+        ctx.fillStyle='rgba(255,255,255,0.25)'; ctx.beginPath(); ctx.ellipse(20,24,7,5,0,0,Math.PI*2); ctx.fill();
+        ctx.strokeStyle='rgba(0,0,0,0.3)'; ctx.lineWidth=2; ctx.beginPath(); ctx.ellipse(24,28,16,10,0,0,Math.PI*2); ctx.stroke();
+      });
+      const el = document.getElementById('assetStatus');
+      el.textContent = 'Assets:\n' + this.assetStatus.join('\n');
+    });
+  }
+
+  create() {
+    // 地圖 3200×3200（100×100 tiles × 32）
+    const tileW=32,tileH=32, tilesX=100, tilesY=100;
+    this.map = this.make.tilemap({ tileWidth: tileW, tileHeight: tileH, width: tilesX, height: tilesY });
+    const tileset = this.map.addTilesetImage('grass','grass',tileW,tileH,0,0,1);
+    this.ground = this.map.createBlankLayer('ground', tileset, 0, 0);
+    this.ground.fill(1);
+
+    // 物理 & 相機
+    this.physics.world.setBounds(0,0,this.map.widthInPixels,this.map.heightInPixels);
+    this.cameras.main.setBounds(0,0,this.map.widthInPixels,this.map.heightInPixels);
+    this.cameras.main.setRoundPixels(true);
+
+    const useKey = k => this[k + '_resolved'] || k;
+
+    // 玩家（圖片 48px，實際顯示縮到 32px）
+    const pImg = this.textures.get(useKey('player')).getSourceImage();
+    const pScale = 32 / pImg.width;  // 48 -> 32
+    const startX = this.map.widthInPixels/2, startY = this.map.heightInPixels/2;
+    this.player = this.physics.add.image(startX,startY,useKey('player')).setScale(pScale).setDepth(6);
+    this.player.setCollideWorldBounds(true);
+    this.player.body.setSize(this.player.displayWidth*0.6, this.player.displayHeight*0.8, true);
+
+    // 相機：進場就鎖在玩家，且持續跟隨
+    this.cameras.main.centerOn(this.player.x, this.player.y);
+    this.cameras.main.startFollow(this.player, true, 0.22, 0.22);
+    if (this.sys.game.device.os.android || this.sys.game.device.os.iOS) {
+      this.cameras.main.setZoom(1.2); // 手機視角放大些
+    }
+
+    // 群組
+    this.npcs  = this.physics.add.staticGroup();
+    this.trees = this.physics.add.staticGroup();
+    this.rocks = this.physics.add.staticGroup();
+
+    // NPC = 4 位（同樣把 48px 轉 32px 顯示）
+    this.spawnNPCs(4, useKey('npc'));
+
+    // 樹 & 石（不可穿越）
+    this.scatterDecor(useKey('tree'), useKey('rock'));
+
+    // 碰撞
+    this.physics.add.collider(this.player, this.trees);
+    this.physics.add.collider(this.player, this.rocks);
+    this.physics.add.collider(this.player, this.npcs);
+
+    // 箭頭
+    this.arrow = this.add.image(0,0,'arrow').setOrigin(0.5).setDepth(20).setScale(0.9);
+
+    // 陰影 Graphics
+    this.shadowGfx = this.add.graphics().setDepth(5);
+
+    // 對話 UI
+    this.interactRadius = 42;
+    this.interactHint = this.add.text(0,0,'按 E 對話',{fontSize:'16px',color:'#fff',backgroundColor:'#0008',padding:{x:8,y:4}}).setDepth(30).setVisible(false);
+    this.dialogBox  = this.add.rectangle(260, this.game.config.height-60, 420, 90, 0x000000, 0.75).setStrokeStyle(2,0xffffff).setDepth(30).setScrollFactor(0).setVisible(false);
+    this.dialogText = this.add.text(70, this.game.config.height-95, '', {fontSize:'18px', color:'#fff', wordWrap:{width:400}}).setDepth(31).setScrollFactor(0).setVisible(false);
+
+    // PC 鍵盤
+    this.cursors = this.input.keyboard.createCursorKeys();
+    this.keys = this.input.keyboard.addKeys('W,A,S,D,E');
+    this.speed = 240;
+
+    // 手機虛擬搖桿（畫面固定 UI）
+    this.joy = {
+      base: this.add.circle(0,0,34,0x000000,0.25).setScrollFactor(0).setDepth(40).setVisible(false),
+      knob: this.add.circle(0,0,18,0xffffff,0.35).setScrollFactor(0).setDepth(41).setVisible(false),
+      active: false, dir: new Phaser.Math.Vector2(0,0), radius: 40, dead: 6
+    };
+    this.input.on('pointerdown', p=>{
+      this.joy.active = true;
+      this.joy.base.setPosition(p.x, p.y).setVisible(true);
+      this.joy.knob.setPosition(p.x, p.y).setVisible(true);
+      this.joy.start = new Phaser.Math.Vector2(p.x, p.y);
+      this.touchDir = new Phaser.Math.Vector2(0,0);
+    });
+    this.input.on('pointermove', p=>{
+      if (!this.joy.active) return;
+      const dx = p.x - this.joy.start.x, dy = p.y - this.joy.start.y;
+      const vec = new Phaser.Math.Vector2(dx, dy);
+      const len = vec.length();
+      const r = this.joy.radius;
+      const clamped = len > r ? vec.scale(r/len) : vec;
+      this.joy.knob.setPosition(this.joy.start.x + clamped.x, this.joy.start.y + clamped.y);
+      if (len > this.joy.dead) this.touchDir = vec.normalize(); else this.touchDir = new Phaser.Math.Vector2(0,0);
+    });
+    this.input.on('pointerup', ()=>{
+      this.joy.active = false;
+      this.joy.base.setVisible(false); this.joy.knob.setVisible(false);
+      this.touchDir = null;
+    });
+
+    // HUD
+    document.getElementById('sizeLabel').textContent =
+      `地圖：3200×3200　NPC：${this.npcs.getLength()}　樹：${this.trees.getLength()}　石：${this.rocks.getLength()}`;
+  }
+
+  randomPos(margin=64){
+    const x = Phaser.Math.Between(margin, this.map.widthInPixels - margin);
+    const y = Phaser.Math.Between(margin, this.map.heightInPixels - margin);
+    return { x, y };
+  }
+
+  spawnNPCs(count, npcKey){
+    this.npcs.clear(true,true);
+    const nImg = this.textures.get(npcKey).getSourceImage();
+    const nScale = 32 / nImg.width; // 48px -> 32px 顯示
+    for (let i=0;i<count;i++){
+      const p = this.randomPos(96);
+      const npc = this.npcs.create(p.x,p.y,npcKey).setScale(nScale).setDepth(6);
+      npc.refreshBody();
+      npc.data = { name:`村民 #${i+1}` };
+    }
+  }
+
+  scatterDecor(treeKey, rockKey){
+    this.trees.clear(true,true); this.rocks.clear(true,true);
+    const treeCount = 55, rockCount = 45;
+    const tImg = this.textures.get(treeKey).getSourceImage();
+    const rImg = this.textures.get(rockKey).getSourceImage();
+    const tScale = 32 / tImg.width;              // 48 -> 32 顯示
+    const rBase  = (48 / rImg.width);            // 石頭顯示 ~48px
+    const minDistFromPlayer = 160, minDistFromNPC = 70;
+    const npcPos = () => this.npcs.getChildren().map(n => new Phaser.Math.Vector2(n.x,n.y));
+    const tooClose = (x,y, pts, d) => pts.some(p => Phaser.Math.Distance.Between(x,y,p.x,p.y) < d);
+
+    // 樹
+    for (let i=0, placed=0; placed<treeCount && i<treeCount*20; i++){
+      const p = this.randomPos(64);
+      if (Phaser.Math.Distance.Between(p.x,p.y, this.map.widthInPixels/2, this.map.heightInPixels/2) < minDistFromPlayer) continue;
+      if (tooClose(p.x,p.y, npcPos(), minDistFromNPC)) continue;
+      const t = this.trees.create(p.x,p.y,treeKey).setScale(tScale).setDepth(6);
+      t.refreshBody(); placed++;
+    }
+    // 石（大小帶一點抖動 & 隨機旋轉）
+    for (let i=0, placed=0; placed<rockCount && i<rockCount*25; i++){
+      const p = this.randomPos(64);
+      if (Phaser.Math.Distance.Between(p.x,p.y, this.map.widthInPixels/2, this.map.heightInPixels/2) < minDistFromPlayer) continue;
+      if (tooClose(p.x,p.y, npcPos(), minDistFromNPC)) continue;
+      const s = rBase * Phaser.Math.FloatBetween(0.9, 1.2);
+      const r = this.rocks.create(p.x,p.y,rockKey).setScale(s).setDepth(6);
+      r.setRotation(Phaser.Math.FloatBetween(-0.35, 0.35));
+      r.refreshBody(); placed++;
+    }
+  }
+
+  drawShadows(){
+    const gfx = this.shadowGfx; gfx.clear(); gfx.fillStyle(0x000000, 0.28);
+    const cam = this.cameras.main;
+    const drawEllipse = (x,y,w,h) => {
+      if (x < cam.worldView.x-80 || x > cam.worldView.right+80 || y < cam.worldView.y-80 || y > cam.worldView.bottom+80) return;
+      gfx.fillEllipse(x, y+10, w, h);
+    };
+    drawEllipse(this.player.x, this.player.y, 26, 14);
+    this.npcs.getChildren().forEach(n => drawEllipse(n.x, n.y, 26, 14));
+    this.trees.getChildren().forEach(t => drawEllipse(t.x, t.y, 30, 16));
+    this.rocks.getChildren().forEach(r => drawEllipse(r.x, r.y, 28 * r.scaleX, 14 * r.scaleY));
+  }
+
+  update() {
+    // 移動：鍵盤 + 手機搖桿（搖桿優先）
+    const v = 240;
+    let vx=0, vy=0;
+    if (this.cursors.left.isDown || this.keys.A.isDown)  vx -= 1;
+    if (this.cursors.right.isDown|| this.keys.D.isDown)  vx += 1;
+    if (this.cursors.up.isDown   || this.keys.W.isDown)  vy -= 1;
+    if (this.cursors.down.isDown || this.keys.S.isDown)  vy += 1;
+    if (this.touchDir) { vx = this.touchDir.x; vy = this.touchDir.y; }
+    const dir = new Phaser.Math.Vector2(vx, vy);
+    if (dir.lengthSq() > 0) dir.normalize().scale(v);
+    this.player.body.setVelocity(dir.x, dir.y);
+
+    // 最近 NPC + 箭頭
+    const list = this.npcs.getChildren();
+    let nearest=null, minD=1e9;
+    for(const n of list){ const d=Phaser.Math.Distance.Between(this.player.x,this.player.y,n.x,n.y); if(d<minD){minD=d; nearest=n;} }
+    if (nearest && minD > this.interactRadius + 6){
+      this.arrow.setVisible(true).setPosition(this.player.x, this.player.y - 34);
+      this.arrow.setRotation(Phaser.Math.Angle.Between(this.player.x, this.player.y, nearest.x, nearest.y));
+    } else { this.arrow.setVisible(false); }
+
+    // 對話
+    if (nearest && minD < this.interactRadius){
+      this.interactHint?.setVisible(true).setPosition(this.player.x - 30, this.player.y - 50);
+      if (Phaser.Input.Keyboard.JustDown(this.keys.E)){
+        const show = !this.dialogBox.visible;
+        this.dialogBox.setVisible(show);
+        this.dialogText.setText(`${nearest.data?.name || 'NPC'}：哈囉，勇者！這是示範對話。\n（再按 E 關閉/開啟）`).setVisible(show);
+      }
+    } else {
+      this.interactHint?.setVisible(false);
+      if (this.dialogBox.visible){ this.dialogBox.setVisible(false); this.dialogText.setVisible(false); }
+    }
+
+    // 陰影
+    this.drawShadows();
+  }
+}
+
+new Phaser.Game({
+  type: Phaser.AUTO,
+  parent: 'game',
+  width: 960,
+  height: 600,
+  backgroundColor: '#222',
+  pixelArt: true,
+  physics: { default:'arcade', arcade:{ gravity:{y:0}, debug:false } },
+  scene: [MainScene]
+});
+</script>
+</body>
+</html>
