@@ -3,19 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no,viewport-fit=cover" />
-  <title>Plain 3200×3200 | NPC x4 | Obstacles | Arrow | Mobile Joystick</title>
+  <title>RPG Plain | Lock-Centered Camera</title>
   <style>
-    /* 用 100svh 解決手機地址列/工具列改變高度問題 */
-    html,body { height:100%; }
-    body { margin:0; background:#111; display:grid; place-items:center; height:100svh; touch-action:none; }
-    #game { box-shadow:0 8px 24px rgba(0,0,0,.4); }
-    .hud { position:fixed; left:12px; top:12px; color:#fff; font:14px system-ui,Segoe UI,Arial;
-           background:rgba(0,0,0,.55); padding:8px 10px; border-radius:8px; user-select:none; white-space:pre-line; }
-    @supports(padding:max(0px)) {
-      .hud { padding-left: max(10px, env(safe-area-inset-left));
-             padding-right:max(10px, env(safe-area-inset-right));
-             padding-top:   max(8px,  env(safe-area-inset-top)); }
-    }
+    html,body{height:100%}
+    body{margin:0;background:#111;touch-action:none}
+    #game{position:fixed;inset:0}
+    .hud{position:fixed;left:12px;top:12px;color:#fff;font:14px system-ui,Segoe UI,Arial;
+         background:rgba(0,0,0,.55);padding:8px 10px;border-radius:8px;user-select:none;white-space:pre-line}
   </style>
   <script src="https://cdn.jsdelivr.net/npm/phaser@3/dist/phaser.min.js"></script>
 </head>
@@ -76,31 +70,30 @@ class MainScene extends Phaser.Scene {
           return okKey;
         }
       };
-      // 內建備援：透明背景、簡易人形
+      // 備援：透明背景簡易人形
       ensure('player', ['player_main','player_alt'], ctx => {
         ctx.clearRect(0,0,48,48);
-        ctx.fillStyle='#1e90ff'; ctx.beginPath(); ctx.ellipse(24,34,14,12,0,0,Math.PI*2); ctx.fill(); // 身體
-        ctx.fillStyle='rgb(235,205,175)'; ctx.beginPath(); ctx.ellipse(24,16,8,6,0,0,Math.PI*2); ctx.fill(); // 頭
+        ctx.fillStyle='#1e90ff'; ctx.beginPath(); ctx.ellipse(24,34,14,12,0,0,Math.PI*2); ctx.fill();
+        ctx.fillStyle='rgb(235,205,175)'; ctx.beginPath(); ctx.ellipse(24,16,8,6,0,0,Math.PI*2); ctx.fill();
       });
-      ensure('npc',    ['npc_main','npc_alt'], ctx => {
+      ensure('npc', ['npc_main','npc_alt'], ctx => {
         ctx.clearRect(0,0,48,48);
         ctx.fillStyle='#ffb347'; ctx.beginPath(); ctx.ellipse(24,34,14,12,0,0,Math.PI*2); ctx.fill();
         ctx.fillStyle='rgb(240,210,185)'; ctx.beginPath(); ctx.ellipse(24,16,8,6,0,0,Math.PI*2); ctx.fill();
       });
-      ensure('tree',   ['tree_main','tree_alt'], ctx => {
+      ensure('tree', ['tree_main','tree_alt'], ctx => {
         ctx.clearRect(0,0,48,48);
         ctx.fillStyle='#2e7d32'; ctx.beginPath(); ctx.ellipse(24,24,18,18,0,0,Math.PI*2); ctx.fill();
         ctx.fillStyle='rgba(255,255,255,0.18)'; ctx.beginPath(); ctx.ellipse(18,18,8,6,0,0,Math.PI*2); ctx.fill();
         ctx.fillStyle='#8d6e63'; ctx.fillRect(22,26,4,10);
       });
-      ensure('rock',   ['rock_main','rock_alt'], ctx => {
+      ensure('rock', ['rock_main','rock_alt'], ctx => {
         ctx.clearRect(0,0,48,48);
         ctx.fillStyle='#8a8a8a'; ctx.beginPath(); ctx.ellipse(24,28,16,10,0,0,Math.PI*2); ctx.fill();
         ctx.fillStyle='rgba(255,255,255,0.25)'; ctx.beginPath(); ctx.ellipse(20,24,7,5,0,0,Math.PI*2); ctx.fill();
         ctx.strokeStyle='rgba(0,0,0,0.3)'; ctx.lineWidth=2; ctx.beginPath(); ctx.ellipse(24,28,16,10,0,0,Math.PI*2); ctx.stroke();
       });
-      const el = document.getElementById('assetStatus');
-      el.textContent = 'Assets:\n' + this.assetStatus.join('\n');
+      document.getElementById('assetStatus').textContent = 'Assets:\n' + this.assetStatus.join('\n');
     });
   }
 
@@ -127,18 +120,15 @@ class MainScene extends Phaser.Scene {
     this.player.setCollideWorldBounds(true);
     this.player.body.setSize(this.player.displayWidth*0.6, this.player.displayHeight*0.8, true);
 
-    // —— 相機：永遠讓玩家在螢幕中央（硬中心化）——
-    // 跟隨（lerp=1 -> 每幀硬跟）
-    this.cameras.main.startFollow(this.player, true, 1, 1);
-    // 手機視角稍微放大
-    if (this.sys.game.device.os.android || this.sys.game.device.os.iOS) {
-      this.cameras.main.setZoom(1.2);
-    }
-    // 立刻中心一次 + 下一幀 + 50ms 後再中心；並監聽 resize
-    this.centerCameraHard();
-    requestAnimationFrame(() => this.centerCameraHard());
-    this.time.delayedCall(50, () => this.centerCameraHard());
-    this.scale.on('resize', () => this.centerCameraHard());
+    // —— 相機永遠固定玩家在正中央（超硬作法）——
+    // 不靠 follow，改在 postupdate 每幀 centerOn
+    const cam = this.cameras.main;
+    this.centerCameraHard = () => cam.centerOn(this.player.x, this.player.y);
+    this.events.on('postupdate', this.centerCameraHard, this);
+    this.scale.on('resize', this.centerCameraHard, this);
+    if (this.sys.game.device.os.android || this.sys.game.device.os.iOS) cam.setZoom(1.2);
+    // 立刻、下一幀、50ms 後各中心一次，應對行動裝置地址列跳動
+    this.centerCameraHard(); requestAnimationFrame(()=>this.centerCameraHard()); this.time.delayedCall(50, ()=>this.centerCameraHard());
 
     // 群組
     this.npcs  = this.physics.add.staticGroup();
@@ -147,7 +137,6 @@ class MainScene extends Phaser.Scene {
 
     // NPC = 4 位
     this.spawnNPCs(4, useKey('npc'));
-
     // 樹 & 石（不可穿越）
     this.scatterDecor(useKey('tree'), useKey('rock'));
 
@@ -194,7 +183,7 @@ class MainScene extends Phaser.Scene {
       const r = this.joy.radius;
       const clamped = len > r ? vec.scale(r/len) : vec;
       this.joy.knob.setPosition(this.joy.start.x + clamped.x, this.joy.start.y + clamped.y);
-      if (len > this.joy.dead) this.touchDir = vec.normalize(); else this.touchDir = new Phaser.Math.Vector2(0,0);
+      this.touchDir = (len > this.joy.dead) ? vec.normalize() : new Phaser.Math.Vector2(0,0);
     });
     this.input.on('pointerup', ()=>{
       this.joy.active = false;
@@ -205,13 +194,6 @@ class MainScene extends Phaser.Scene {
     // HUD
     document.getElementById('sizeLabel').textContent =
       `地圖：3200×3200　NPC：${this.npcs.getLength()}　樹：${this.trees.getLength()}　石：${this.rocks.getLength()}`;
-  }
-
-  // —— 強制把相機中心放在玩家 —— 
-  centerCameraHard(){
-    const cam = this.cameras.main;
-    cam.scrollX = this.player.x - cam.width  * 0.5;
-    cam.scrollY = this.player.y - cam.height * 0.5;
   }
 
   // === 安全座標（考慮顯示寬高 + 外圈邊距） ===
@@ -337,19 +319,21 @@ class MainScene extends Phaser.Scene {
 
     // 陰影
     this.drawShadows();
-
-    // 每幀再硬中心一次（極端裝置/瀏覽器保險）
-    this.centerCameraHard();
+    // 其餘中心化交給 postupdate 的 centerOn（已綁定）
   }
 }
 
+// ——— 用 RESIZE 讓 Canvas 跟著視窗大小，避免手機地址列造成初始偏移 ———
 new Phaser.Game({
   type: Phaser.AUTO,
   parent: 'game',
-  width: 960,
-  height: 600,
   backgroundColor: '#222',
   pixelArt: true,
+  scale: {
+    mode: Phaser.Scale.RESIZE,
+    parent: 'game',
+    autoCenter: Phaser.Scale.CENTER_BOTH
+  },
   physics: { default:'arcade', arcade:{ gravity:{y:0}, debug:false } },
   scene: [MainScene]
 });
