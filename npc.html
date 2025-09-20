@@ -8,15 +8,16 @@
     body { margin:0; background:#111; display:grid; place-items:center; height:100vh; }
     #game { box-shadow:0 8px 24px rgba(0,0,0,.4); }
     .hud { position:fixed; left:12px; top:12px; color:#fff; font:14px system-ui,Segoe UI,Arial;
-           background:rgba(0,0,0,.55); padding:8px 10px; border-radius:8px; user-select:none; }
+           background:rgba(0,0,0,.55); padding:8px 10px; border-radius:8px; user-select:none; white-space:pre-line; }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/phaser@3/dist/phaser.min.js"></script>
 </head>
 <body>
 <div id="game"></div>
-<div class="hud">
-  <div>方向鍵 / WASD 移動、E 對話</div>
+<div class="hud" id="hud">
+  方向鍵 / WASD 移動、E 對話
   <div id="sizeLabel"></div>
+  <div id="assetStatus"></div>
 </div>
 
 <script>
@@ -24,7 +25,7 @@ class MainScene extends Phaser.Scene {
   constructor(){ super('main'); }
 
   preload() {
-    // 草地 32x32 紋理
+    // 草地 32x32
     const grass = this.textures.createCanvas('grass', 32, 32);
     const g = grass.getContext();
     g.fillStyle = '#3aa64a'; g.fillRect(0,0,32,32);
@@ -41,31 +42,59 @@ class MainScene extends Phaser.Scene {
     a.beginPath(); a.moveTo(28,18); a.lineTo(10,8); a.lineTo(10,28); a.closePath(); a.fill(); a.stroke();
     arrow.refresh();
 
-    // 陰影紋理（通用）— 半透明黑色橢圓
-    const sh = this.textures.createCanvas('shadow', 40, 24);
-    const shc = sh.getContext();
-    shc.clearRect(0,0,40,24); shc.fillStyle='rgba(0,0,0,0.35)';
-    shc.beginPath(); shc.ellipse(20, 14, 16, 8, 0, 0, Math.PI*2); shc.fill();
-    sh.refresh();
+    // 嘗試多路徑載入（GitHub Pages 大小寫敏感）
+    this.load.image('player_main', 'assets/player.png');
+    this.load.image('player_alt',  'player.png');
+    this.load.image('npc_main',    'assets/npc.png');
+    this.load.image('npc_alt',     'npc.png');
 
-    // 嘗試載入外部圖（讀不到就用程式備援）
-    this.load.image('player', 'assets/player.png');
-    this.load.image('npc',    'assets/npc.png');
-    this.load.image('tree',   'assets/tree.png');
-    this.load.image('rock',   'assets/rock.png');
+    this.load.image('tree_main',   'assets/tree.png');
+    this.load.image('tree_alt',    'tree.png');
+    this.load.image('rock_main',   'assets/rock.png');
+    this.load.image('rock_alt',    'rock.png');
 
+    this.assetStatus = [];
+
+    // 載入完成後：若缺檔，建立內建備援紋理
     this.load.on('complete', () => {
-      const ensure = (key, paint)=>{ if(!this.textures.exists(key)){ const t=this.textures.createCanvas(key,32,32); paint(t.getContext()); t.refresh(); } };
-      ensure('player', ctx=>{ ctx.clearRect(0,0,32,32); ctx.fillStyle='#1e90ff'; ctx.beginPath(); ctx.arc(16,16,12,0,Math.PI*2); ctx.fill(); });
-      ensure('npc',    ctx=>{ ctx.clearRect(0,0,32,32); ctx.fillStyle='#ffb347'; ctx.beginPath(); ctx.arc(16,16,12,0,Math.PI*2); ctx.fill(); });
-      ensure('tree',   ctx=>{ ctx.clearRect(0,0,32,32); ctx.fillStyle='#2e7d32'; ctx.beginPath(); ctx.arc(16,14,12,0,Math.PI*2); ctx.fill(); ctx.fillStyle='#8d6e63'; ctx.fillRect(14,18,4,10); });
-      // rock：較寫實一點的亮暗層
-      ensure('rock',   ctx=>{
+      const ensure = (wantKey, candidates, painter) => {
+        let okKey = null;
+        for (const k of candidates) if (this.textures.exists(k)) { okKey = k; break; }
+        if (!okKey) {
+          const t = this.textures.createCanvas(wantKey, 32, 32);
+          painter(t.getContext()); t.refresh();
+          this.assetStatus.push(`${wantKey}: fallback (canvas)`);
+          return wantKey;
+        } else {
+          // 用 found 的 key 當作最終 key 的 Alias
+          // Phaser 沒內建 rename；我們就記住 mapping
+          this.assetStatus.push(`${wantKey} ← ${okKey}`);
+          this[wantKey + '_resolved'] = okKey;
+          return okKey;
+        }
+      };
+
+      // 內建圖樣（看得到人物）
+      ensure('player', ['player_main','player_alt'], ctx => {
+        ctx.clearRect(0,0,32,32); ctx.fillStyle='#1e90ff'; ctx.beginPath(); ctx.arc(16,16,12,0,Math.PI*2); ctx.fill();
+      });
+      ensure('npc',    ['npc_main','npc_alt'], ctx => {
+        ctx.clearRect(0,0,32,32); ctx.fillStyle='#ffb347'; ctx.beginPath(); ctx.arc(16,16,12,0,Math.PI*2); ctx.fill();
+      });
+      ensure('tree',   ['tree_main','tree_alt'], ctx => {
+        ctx.clearRect(0,0,32,32); ctx.fillStyle='#2e7d32'; ctx.beginPath(); ctx.arc(16,14,12,0,Math.PI*2); ctx.fill();
+        ctx.fillStyle='#8d6e63'; ctx.fillRect(14,18,4,10);
+      });
+      ensure('rock',   ['rock_main','rock_alt'], ctx => {
         ctx.clearRect(0,0,32,32);
         ctx.fillStyle='#8a8a8a'; ctx.beginPath(); ctx.ellipse(16,18,13,9,0,0,Math.PI*2); ctx.fill();
         ctx.fillStyle='rgba(255,255,255,0.25)'; ctx.beginPath(); ctx.ellipse(12,14,6,4,0,0,Math.PI*2); ctx.fill();
         ctx.strokeStyle='rgba(0,0,0,0.3)'; ctx.lineWidth=1; ctx.beginPath(); ctx.ellipse(16,18,13,9,0,0,Math.PI*2); ctx.stroke();
       });
+
+      // 在 HUD 顯示載入結果
+      const el = document.getElementById('assetStatus');
+      el.textContent = 'Assets: \n' + this.assetStatus.join('\n');
     });
   }
 
@@ -82,11 +111,14 @@ class MainScene extends Phaser.Scene {
     this.cameras.main.setBounds(0,0,this.map.widthInPixels,this.map.heightInPixels);
     this.cameras.main.setRoundPixels(true);
 
+    // 解析實際可用貼圖 key（若前面找到 alt，就用 alt）
+    const useKey = k => this[k + '_resolved'] || k;
+
     // 玩家
-    const pTex = this.textures.get('player').getSourceImage();
-    const pScale = 32 / pTex.width;
+    const pImg = this.textures.get(useKey('player')).getSourceImage();
+    const pScale = 32 / pImg.width;
     const startX = this.map.widthInPixels/2, startY = this.map.heightInPixels/2;
-    this.player = this.physics.add.image(startX,startY,'player').setScale(pScale).setDepth(5);
+    this.player = this.physics.add.image(startX,startY,useKey('player')).setScale(pScale).setDepth(5);
     this.player.setCollideWorldBounds(true);
     this.player.body.setSize(this.player.displayWidth*0.6, this.player.displayHeight*0.8, true);
 
@@ -99,10 +131,10 @@ class MainScene extends Phaser.Scene {
     this.rocks = this.physics.add.staticGroup();
 
     // NPC = 4 位
-    this.spawnNPCs(4);
+    this.spawnNPCs(4, useKey('npc'));
 
-    // 樹 & 石（不可穿越）：數量「一般般」，會依面積取個適中值
-    this.scatterDecor();
+    // 樹 & 石（不可穿越）
+    this.scatterDecor(useKey('tree'), useKey('rock'));
 
     // 碰撞
     this.physics.add.collider(this.player, this.trees);
@@ -112,7 +144,7 @@ class MainScene extends Phaser.Scene {
     // 箭頭（指向最近 NPC）
     this.arrow = this.add.image(0,0,'arrow').setOrigin(0.5).setDepth(20).setScale(0.9);
 
-    // 陰影 Graphics（每禎重畫，可視區只有幾百個物件也沒問題）
+    // 陰影 Graphics
     this.shadowGfx = this.add.graphics().setDepth(4);
 
     // 對話 UI（固定螢幕左下）
@@ -137,32 +169,28 @@ class MainScene extends Phaser.Scene {
     return { x, y };
   }
 
-  spawnNPCs(count){
+  spawnNPCs(count, npcKey){
     this.npcs.clear(true,true);
-    const nTex = this.textures.get('npc').getSourceImage();
-    const nScale = 32 / nTex.width;
+    const nImg = this.textures.get(npcKey).getSourceImage();
+    const nScale = 32 / nImg.width;
     for (let i=0;i<count;i++){
       const p = this.randomPos(96);
-      const npc = this.npcs.create(p.x,p.y,'npc').setScale(nScale).setDepth(5);
+      const npc = this.npcs.create(p.x,p.y,npcKey).setScale(nScale).setDepth(5);
       npc.refreshBody();
       npc.data = { name:`村民 #${i+1}` };
     }
   }
 
-  scatterDecor(){
+  scatterDecor(treeKey, rockKey){
     this.trees.clear(true,true); this.rocks.clear(true,true);
-    // 100×100 tiles → 面積 10000，取「一般般」密度
-    const treeCount = 55;     // 你可調整
-    const rockCount = 45;     // 放大也更顯眼
-    const tTex = this.textures.get('tree').getSourceImage();
-    const rTex = this.textures.get('rock').getSourceImage();
+    const treeCount = 55;
+    const rockCount = 45;
+    const tImg = this.textures.get(treeKey).getSourceImage();
+    const rImg = this.textures.get(rockKey).getSourceImage();
+    const tBaseScale = 32 / tImg.width;
+    const rTargetPx  = 48; const rBaseScale = rTargetPx / rImg.width;
 
-    // 樹固定約 32 像素，石頭放大到 ~48 像素、帶些隨機旋轉/縮放（寫實感）
-    const tBaseScale = 32 / tTex.width;
-    const rTargetPx  = 48; const rBaseScale = rTargetPx / rTex.width;
-
-    const minDistFromPlayer = 160;
-    const minDistFromNPC = 70;
+    const minDistFromPlayer = 160, minDistFromNPC = 70;
     const npcPos = () => this.npcs.getChildren().map(n => new Phaser.Math.Vector2(n.x,n.y));
     const tooClose = (x,y, pts, d) => pts.some(p => Phaser.Math.Distance.Between(x,y,p.x,p.y) < d);
 
@@ -171,46 +199,36 @@ class MainScene extends Phaser.Scene {
       const p = this.randomPos(64);
       if (Phaser.Math.Distance.Between(p.x,p.y, this.map.widthInPixels/2, this.map.heightInPixels/2) < minDistFromPlayer) continue;
       if (tooClose(p.x,p.y, npcPos(), minDistFromNPC)) continue;
-      const t = this.trees.create(p.x,p.y,'tree').setScale(tBaseScale).setDepth(5);
+      const t = this.trees.create(p.x,p.y,treeKey).setScale(tBaseScale).setDepth(5);
       t.refreshBody(); placed++;
     }
 
-    // 石（放大 + 隨機旋轉/縮放）
+    // 石
     for (let i=0, placed=0; placed<rockCount && i<rockCount*25; i++){
       const p = this.randomPos(64);
       if (Phaser.Math.Distance.Between(p.x,p.y, this.map.widthInPixels/2, this.map.heightInPixels/2) < minDistFromPlayer) continue;
       if (tooClose(p.x,p.y, npcPos(), minDistFromNPC)) continue;
       const s = rBaseScale * Phaser.Math.FloatBetween(0.9, 1.2);
-      const r = this.rocks.create(p.x,p.y,'rock').setScale(s).setDepth(5);
+      const r = this.rocks.create(p.x,p.y,rockKey).setScale(s).setDepth(5);
       r.setRotation(Phaser.Math.FloatBetween(-0.35, 0.35));
       r.refreshBody(); placed++;
     }
   }
 
   drawShadows(){
-    // 在可視區塊內為 玩家 / NPC / 樹 / 石頭 畫半透明陰影
-    const gfx = this.shadowGfx;
-    gfx.clear();
-    gfx.fillStyle(0x000000, 0.28);
+    const gfx = this.shadowGfx; gfx.clear(); gfx.fillStyle(0x000000, 0.28);
     const cam = this.cameras.main;
     const drawEllipse = (x,y,w,h) => {
-      // 只畫在鏡頭附近，省一點點功
       if (x < cam.worldView.x-80 || x > cam.worldView.right+80 || y < cam.worldView.y-80 || y > cam.worldView.bottom+80) return;
       gfx.fillEllipse(x, y+10, w, h);
     };
-
-    // 玩家
     drawEllipse(this.player.x, this.player.y, 26, 14);
-    // NPC
     this.npcs.getChildren().forEach(n => drawEllipse(n.x, n.y, 26, 14));
-    // 樹（大一點）
     this.trees.getChildren().forEach(t => drawEllipse(t.x, t.y, 30, 16));
-    // 石（依縮放略調）
     this.rocks.getChildren().forEach(r => drawEllipse(r.x, r.y, 28 * r.scaleX, 14 * r.scaleY));
   }
 
   update() {
-    // 移動
     const v = 240;
     this.player.body.setVelocity(0);
     if (this.cursors.left.isDown || this.keys.A.isDown)  this.player.body.setVelocityX(-v);
@@ -222,15 +240,13 @@ class MainScene extends Phaser.Scene {
     const list = this.npcs.getChildren();
     let nearest=null, minD=1e9;
     for(const n of list){ const d=Phaser.Math.Distance.Between(this.player.x,this.player.y,n.x,n.y); if(d<minD){minD=d; nearest=n;} }
-    if (nearest && minD > this.interactRadius + 6){
+    if (nearest && minD > 42 + 6){
       this.arrow.setVisible(true).setPosition(this.player.x, this.player.y - 34);
       this.arrow.setRotation(Phaser.Math.Angle.Between(this.player.x, this.player.y, nearest.x, nearest.y));
-    } else {
-      this.arrow.setVisible(false);
-    }
+    } else { this.arrow.setVisible(false); }
 
     // 對話
-    if (nearest && minD < this.interactRadius){
+    if (nearest && minD < 42){
       this.interactHint?.setVisible(true).setPosition(this.player.x - 30, this.player.y - 50);
       if (Phaser.Input.Keyboard.JustDown(this.keys.E)){
         const show = !this.dialogBox.visible;
@@ -242,7 +258,7 @@ class MainScene extends Phaser.Scene {
       if (this.dialogBox.visible){ this.dialogBox.setVisible(false); this.dialogText.setVisible(false); }
     }
 
-    // 陰影重畫
+    // 陰影
     this.drawShadows();
   }
 }
