@@ -120,11 +120,16 @@ class MainScene extends Phaser.Scene {
     this.player.setCollideWorldBounds(true);
     this.player.body.setSize(this.player.displayWidth*0.6, this.player.displayHeight*0.8, true);
 
-    // 相機：進場就鎖在玩家，且持續跟隨
-    this.cameras.main.centerOn(this.player.x, this.player.y);
-    this.cameras.main.startFollow(this.player, true, 0.22, 0.22);
+    // 相機：進場就鎖定 + 永遠居中（lerp=1 代表每幀硬跟）
+    // startFollow(target, roundPixels, lerpX, lerpY)
+    this.cameras.main.startFollow(this.player, true, 1, 1);
+    // 再保險一次：立即把視角擺到正中（避免極少數載入幀出現偏移）
+    this.cameras.main.scrollX = this.player.x - this.cameras.main.width  * 0.5;
+    this.cameras.main.scrollY = this.player.y - this.cameras.main.height * 0.5;
+
+    // 手機視角稍微放大
     if (this.sys.game.device.os.android || this.sys.game.device.os.iOS) {
-      this.cameras.main.setZoom(1.2); // 手機視角放大些
+      this.cameras.main.setZoom(1.2);
     }
 
     // 群組
@@ -194,19 +199,34 @@ class MainScene extends Phaser.Scene {
       `地圖：3200×3200　NPC：${this.npcs.getLength()}　樹：${this.trees.getLength()}　石：${this.rocks.getLength()}`;
   }
 
-  randomPos(margin=64){
-    const x = Phaser.Math.Between(margin, this.map.widthInPixels - margin);
-    const y = Phaser.Math.Between(margin, this.map.heightInPixels - margin);
-    return { x, y };
+  // === 安全座標（考慮顯示寬高 + 外圈邊距） ===
+  randomPosFor(displayW, displayH, margin=64){
+    const halfW = displayW/2, halfH = displayH/2;
+    const minX = halfW + margin;
+    const maxX = this.map.widthInPixels  - halfW - margin;
+    const minY = halfH + margin;
+    const maxY = this.map.heightInPixels - halfH - margin;
+    return {
+      x: Phaser.Math.Between(minX|0, maxX|0),
+      y: Phaser.Math.Between(minY|0, maxY|0),
+    };
   }
 
   spawnNPCs(count, npcKey){
     this.npcs.clear(true,true);
     const nImg = this.textures.get(npcKey).getSourceImage();
-    const nScale = 32 / nImg.width; // 48px -> 32px 顯示
+    const nScale = 32 / nImg.width; // 48px -> 顯示 32px
+    const dispW = 32, dispH = 32;
     for (let i=0;i<count;i++){
-      const p = this.randomPos(96);
-      const npc = this.npcs.create(p.x,p.y,npcKey).setScale(nScale).setDepth(6);
+      const p = this.randomPosFor(dispW, dispH, 96);
+      const npc = this.npcs.create(p.x, p.y, npcKey).setScale(nScale).setDepth(6);
+      npc.refreshBody();
+      // 生成後再夾一次，保證在邊界內
+      const halfW = npc.displayWidth/2, halfH = npc.displayHeight/2;
+      npc.setPosition(
+        Phaser.Math.Clamp(npc.x, halfW, this.map.widthInPixels  - halfW),
+        Phaser.Math.Clamp(npc.y, halfH, this.map.heightInPixels - halfH),
+      );
       npc.refreshBody();
       npc.data = { name:`村民 #${i+1}` };
     }
@@ -217,29 +237,40 @@ class MainScene extends Phaser.Scene {
     const treeCount = 55, rockCount = 45;
     const tImg = this.textures.get(treeKey).getSourceImage();
     const rImg = this.textures.get(rockKey).getSourceImage();
-    const tScale = 32 / tImg.width;              // 48 -> 32 顯示
-    const rBase  = (48 / rImg.width);            // 石頭顯示 ~48px
+    const tScale = 32 / tImg.width;          // 48 -> 32 顯示
+    const rBase  = 48 / rImg.width;          // 石頭顯示約 48px
+
     const minDistFromPlayer = 160, minDistFromNPC = 70;
     const npcPos = () => this.npcs.getChildren().map(n => new Phaser.Math.Vector2(n.x,n.y));
     const tooClose = (x,y, pts, d) => pts.some(p => Phaser.Math.Distance.Between(x,y,p.x,p.y) < d);
 
     // 樹
     for (let i=0, placed=0; placed<treeCount && i<treeCount*20; i++){
-      const p = this.randomPos(64);
+      const disp = 32; // 32x32 顯示
+      const p = this.randomPosFor(disp, disp, 64);
       if (Phaser.Math.Distance.Between(p.x,p.y, this.map.widthInPixels/2, this.map.heightInPixels/2) < minDistFromPlayer) continue;
       if (tooClose(p.x,p.y, npcPos(), minDistFromNPC)) continue;
       const t = this.trees.create(p.x,p.y,treeKey).setScale(tScale).setDepth(6);
-      t.refreshBody(); placed++;
+      t.refreshBody();
     }
-    // 石（大小帶一點抖動 & 隨機旋轉）
+
+    // 石（大小抖動 + 旋轉）
     for (let i=0, placed=0; placed<rockCount && i<rockCount*25; i++){
-      const p = this.randomPos(64);
+      const s = rBase * Phaser.Math.FloatBetween(0.9, 1.2);
+      const disp = 48 * s; // 目標顯示寬高近似
+      const p = this.randomPosFor(disp, disp, 64);
       if (Phaser.Math.Distance.Between(p.x,p.y, this.map.widthInPixels/2, this.map.heightInPixels/2) < minDistFromPlayer) continue;
       if (tooClose(p.x,p.y, npcPos(), minDistFromNPC)) continue;
-      const s = rBase * Phaser.Math.FloatBetween(0.9, 1.2);
       const r = this.rocks.create(p.x,p.y,rockKey).setScale(s).setDepth(6);
       r.setRotation(Phaser.Math.FloatBetween(-0.35, 0.35));
-      r.refreshBody(); placed++;
+      r.refreshBody();
+      // 再夾一次保險
+      const halfW = r.displayWidth/2, halfH = r.displayHeight/2;
+      r.setPosition(
+        Phaser.Math.Clamp(r.x, halfW, this.map.widthInPixels  - halfW),
+        Phaser.Math.Clamp(r.y, halfH, this.map.heightInPixels - halfH),
+      );
+      r.refreshBody();
     }
   }
 
@@ -293,6 +324,12 @@ class MainScene extends Phaser.Scene {
 
     // 陰影
     this.drawShadows();
+
+    // —— 絕對保證玩家永遠在畫面正中（雙保險）——
+    //（有時某些瀏覽器在特定 resize/縮放後首幀可能掉跟，這裡每幀硬中心）
+    const cam = this.cameras.main;
+    cam.scrollX = this.player.x - cam.width  * 0.5;
+    cam.scrollY = this.player.y - cam.height * 0.5;
   }
 }
 
