@@ -2,12 +2,11 @@
 <html lang="zh-Hant">
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>中↔韓 同聲傳譯（邊說邊播，本地模型）</title>
+<title>中↔韓 同聲傳譯（單房、邊說邊播、本地模型）</title>
 <style>
-  body{font-family:system-ui,-apple-system,"Noto Sans TC","Microsoft JhengHei",Arial;padding:20px;max-width:900px;margin:auto}
+  body{font-family:system-ui,-apple-system,"Noto Sans TC","Microsoft JhengHei",Arial;padding:20px;max-width:860px;margin:auto}
   .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-  label{font-size:14px;color:#333}
-  input[type=text]{padding:8px 10px;border:1px solid #ccc;border-radius:10px;min-width:150px}
+  input[type=text]{padding:8px 10px;border:1px solid #ccc;border-radius:10px;min-width:180px}
   button{padding:8px 14px;border-radius:10px;border:1px solid #bbb;background:#fff;cursor:pointer}
   button[disabled]{opacity:.5;cursor:not-allowed}
   .pill{padding:4px 10px;border-radius:999px;background:#efefef;font-size:12px}
@@ -15,15 +14,11 @@
   .now{color:#1b7fbd}
 </style>
 <body>
-  <h2>中↔韓 同聲傳譯（邊說邊播，本地模型）</h2>
+  <h2>中↔韓 同聲傳譯（單一房間）</h2>
 
   <div class="row">
     <label>名稱</label>
     <input id="name" type="text" placeholder="你的名字">
-    <label>房間</label>
-    <input id="room" type="text" value="lobby">
-  </div>
-  <div class="row" style="margin-top:10px">
     <button id="join">加入</button>
     <button id="leave" disabled>離開</button>
     <span class="pill" id="status">未連線</span>
@@ -40,10 +35,10 @@
   <div class="logs" id="logs"></div>
 
 <script>
+/* 你的 Cloudflare Tunnel 網域（每次變動就改這一行） */
+const TUNNEL_HOST = "latino-cowboy-victor-snowboard.trycloudflare.com";
 
-const TUNNEL_HOST = "https://latino-cowboy-victor-snowboard.trycloudflare.com";
-
-let ws=null, audioCtx=null, worklet=null, stream=null;
+let ws=null, audioCtx=null, worklet=null, stream=null, pingTimer=null;
 let playQueue=[], playing=false, joined=false;
 
 const $  = (s)=>document.querySelector(s);
@@ -52,18 +47,17 @@ const log= (s)=>{ const el=$('#logs'); el.textContent+=s+"\n"; el.scrollTop=el.s
 async function join(){
   if (joined) return;
   const name = $('#name').value.trim() || 'Guest';
-  const room = $('#room').value.trim() || 'lobby';
 
-  // 前端直接連 Cloudflare Tunnel 的 WebSocket
+  // 先連 WS，先發 hello，再開麥（避免握手前傳了 bytes 導致伺服器關閉）
   ws = new WebSocket(`wss://${TUNNEL_HOST}/ws`);
   ws.binaryType = 'arraybuffer';
 
   ws.onopen = async ()=>{
     $('#status').textContent="已連線"; $('#status').classList.add('now');
-    ws.send(JSON.stringify({name, room, play_self: $('#playSelf').checked}));
-    joined = true; $('#join').disabled=true; $('#leave').disabled=false;
+    // 1) 先送 hello
+    ws.send(JSON.stringify({name, play_self: $('#playSelf').checked}));
 
-    // 啟動麥克風
+    // 2) 再開麥，確保握手完成後才會開始送 bytes
     stream = await navigator.mediaDevices.getUserMedia({
       audio:{
         channelCount:1, sampleRate:48000,
@@ -106,7 +100,12 @@ async function join(){
         ws.send(e.data);
       }
     };
-    source.connect(worklet); // 不接 destination，避免自聽
+    source.connect(worklet); // 不接 destination，避免自聽回授
+
+    joined = true; $('#join').disabled=true; $('#leave').disabled=false;
+
+    // keepalive（避免某些網路設備閒置關閉）：每 20 秒 ping 一次
+    pingTimer = setInterval(()=>{ try{ ws.send(JSON.stringify({type:"ping"})); }catch(_){ } }, 20000);
   };
 
   ws.onmessage = (ev)=>{
@@ -123,6 +122,7 @@ async function join(){
       if(o.type==="partial")log(`📝 ${o.from}（${o.dir}）\n${o.text}`);
       if(o.type==="simul")  log(`🎧 ${o.from}（${o.dir} 邊播）\n新增：${o.src_add}\n翻譯：${o.mt_add}`);
       if(o.type==="final")  log(`✅ ${o.from}（${o.dir} 完整）\n原文：${o.text}\n翻譯：${o.mt}`);
+      if(o.type==="pong")   {/* keepalive ok */}
       if(o.type==="error")  log(`❌ ${o.msg}`);
     }catch(_){}
   };
@@ -139,7 +139,8 @@ function cleanupAudio(){
   try{ worklet && worklet.disconnect(); }catch(_){}
   try{ stream && stream.getTracks().forEach(t=>t.stop()); }catch(_){}
   try{ audioCtx && audioCtx.close(); }catch(_){}
-  worklet=null; audioCtx=null; stream=null;
+  try{ clearInterval(pingTimer); }catch(_){}
+  worklet=null; audioCtx=null; stream=null; pingTimer=null;
 }
 
 function leave(){
@@ -156,7 +157,7 @@ async function playNext(){
   const url=URL.createObjectURL(blob);
   const a=new Audio(url);
   a.onended=()=>{ URL.revokeObjectURL(url); playNext(); };
-  a.play().catch(()=>{ /* 需要使用者互動授權 */ });
+  a.play().catch(()=>{ /* 某些瀏覽器需先互動才允許自動播放 */ });
 }
 
 $('#join').onclick = join;
