@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>中↔韓 同聲傳譯（單房、邊說邊播、本地模型）</title>
+<title>中↔韓 同聲傳譯（單房、邊說邊播）</title>
 <style>
   body{font-family:system-ui,-apple-system,"Noto Sans TC","Microsoft JhengHei",Arial;padding:20px;max-width:860px;margin:auto}
   .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
@@ -35,8 +35,8 @@
   <div class="logs" id="logs"></div>
 
 <script>
-/* 你的 Cloudflare Tunnel 網域（每次變動就改這一行） */
-const TUNNEL_HOST = "https://seattle-substantially-period-sector.trycloudflare.com";
+/* 改成你當前 Cloudflare Tunnel 網域 */
+const TUNNEL_HOST = "outreach-travelling-printers-planes.trycloudflare.com";
 
 let ws=null, audioCtx=null, worklet=null, stream=null, pingTimer=null;
 let playQueue=[], playing=false, joined=false;
@@ -48,16 +48,15 @@ async function join(){
   if (joined) return;
   const name = $('#name').value.trim() || 'Guest';
 
-  // 先連 WS，先發 hello，再開麥（避免握手前傳了 bytes 導致伺服器關閉）
   ws = new WebSocket(`wss://${TUNNEL_HOST}/ws`);
   ws.binaryType = 'arraybuffer';
 
   ws.onopen = async ()=>{
     $('#status').textContent="已連線"; $('#status').classList.add('now');
-    // 1) 先送 hello
+    // 先送 hello，確保握手完成再送音訊
     ws.send(JSON.stringify({name, play_self: $('#playSelf').checked}));
 
-    // 2) 再開麥，確保握手完成後才會開始送 bytes
+    // 啟動麥克風
     stream = await navigator.mediaDevices.getUserMedia({
       audio:{
         channelCount:1, sampleRate:48000,
@@ -80,8 +79,7 @@ async function join(){
             const idx=Math.floor(i*ratio); let s=ch[idx];
             s=Math.max(-1,Math.min(1,s)); pcm[i]=s<0?s*0x8000:s*0x7FFF;
           }
-          // 切 20ms 封包（320 samples@16k）
-          const pkt=320;
+          const pkt=320; // 20ms@16k
           for(let off=0; off<pcm.length; off+=pkt){
             const sl=pcm.subarray(off, off+pkt);
             if(sl.length===pkt) this.port.postMessage(sl.buffer,[sl.buffer]);
@@ -100,11 +98,9 @@ async function join(){
         ws.send(e.data);
       }
     };
-    source.connect(worklet); // 不接 destination，避免自聽回授
+    source.connect(worklet);
 
     joined = true; $('#join').disabled=true; $('#leave').disabled=false;
-
-    // keepalive（避免某些網路設備閒置關閉）：每 20 秒 ping 一次
     pingTimer = setInterval(()=>{ try{ ws.send(JSON.stringify({type:"ping"})); }catch(_){ } }, 20000);
   };
 
@@ -122,7 +118,7 @@ async function join(){
       if(o.type==="partial")log(`📝 ${o.from}（${o.dir}）\n${o.text}`);
       if(o.type==="simul")  log(`🎧 ${o.from}（${o.dir} 邊播）\n新增：${o.src_add}\n翻譯：${o.mt_add}`);
       if(o.type==="final")  log(`✅ ${o.from}（${o.dir} 完整）\n原文：${o.text}\n翻譯：${o.mt}`);
-      if(o.type==="pong")   {/* keepalive ok */}
+      if(o.type==="pong")   {/* keepalive */}
       if(o.type==="error")  log(`❌ ${o.msg}`);
     }catch(_){}
   };
@@ -157,7 +153,7 @@ async function playNext(){
   const url=URL.createObjectURL(blob);
   const a=new Audio(url);
   a.onended=()=>{ URL.revokeObjectURL(url); playNext(); };
-  a.play().catch(()=>{ /* 某些瀏覽器需先互動才允許自動播放 */ });
+  a.play().catch(()=>{ /* 某些瀏覽器需互動授權才自動播放 */ });
 }
 
 $('#join').onclick = join;
