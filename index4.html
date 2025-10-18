@@ -1,4 +1,3 @@
-<!-- index.html  ── 前端：單房「中文↔韓文」同聲傳譯（來源語言可強制、裝置選擇、低延遲邊播） -->
 <!doctype html>
 <html lang="zh-Hant">
 <meta charset="utf-8" />
@@ -49,7 +48,7 @@
   <div class="logs" id="logs"></div>
 
 <script>
-/* 換成你的 Cloudflare Tunnel 網域（含 https://） */
+/* 你的 Cloudflare Tunnel 網域（含 https://） */
 const TUNNEL_HOST = "https://manuals-currently-cleanup-socket.trycloudflare.com";
 
 let ws=null, audioCtx=null, worklet=null, stream=null, pingTimer=null, txTimer=null;
