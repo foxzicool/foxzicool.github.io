@@ -1,4 +1,4 @@
-<!-- index.html ── 單房、邊說邊播、裝置可選、Worklet→ScriptProcessor 後備、MP3 播放 -->
+<!-- index.html -->
 <!doctype html>
 <html lang="zh-Hant">
 <meta charset="utf-8" />
@@ -14,6 +14,7 @@
   .logs{margin-top:12px;padding:10px;border:1px solid #eee;border-radius:10px;background:#fafafa;height:360px;overflow:auto;font-size:14px;white-space:pre-wrap}
   .now{color:#1b7fbd}
   .stat{font-family:monospace}
+  label{user-select:none}
 </style>
 <body>
   <h2>中↔韓 同聲傳譯（單一房間）</h2>
@@ -21,6 +22,12 @@
   <div class="row">
     <label>名稱</label>
     <input id="name" type="text" placeholder="你的名字" value="Public">
+    <label>來源語言</label>
+    <select id="srcLang">
+      <option value="auto" selected>自動偵測</option>
+      <option value="zh">中文（強制）</option>
+      <option value="ko">韓文（強制）</option>
+    </select>
     <button id="join">加入</button>
     <button id="leave" disabled>離開</button>
     <span class="pill" id="status">未連線</span>
@@ -43,7 +50,7 @@
   <div class="logs" id="logs"></div>
 
 <script>
-/* 把這裡改成 cloudflared 顯示的網域（要包含 https://） */
+/* 換成你的 Cloudflare Tunnel 網域（要包含 https://） */
 const TUNNEL_HOST = "https://room-rug-submitted-invitations.trycloudflare.com";
 
 let ws=null, audioCtx=null, worklet=null, stream=null, pingTimer=null, txTimer=null;
@@ -86,12 +93,13 @@ async function join(){
   await listMics();
 
   const name = $('#name').value.trim() || 'Guest';
+  const srcLang = $('#srcLang').value;  // 'auto'|'zh'|'ko'
   ws = new WebSocket(`${TUNNEL_HOST.replace('https://','wss://')}/ws`);
   ws.binaryType = 'arraybuffer';
 
   ws.onopen = async ()=>{
     $('#status').textContent="已連線"; $('#status').classList.add('now');
-    ws.send(JSON.stringify({name, play_self: $('#playSelf').checked}));
+    ws.send(JSON.stringify({name, play_self: $('#playSelf').checked, src_lang: srcLang}));
 
     // 啟動麥克風
     try{
@@ -106,8 +114,7 @@ async function join(){
 
     audioCtx = new (window.AudioContext||window.webkitAudioContext)({sampleRate:48000});
 
-    // 優先 AudioWorklet，若 500ms 內沒送包改走 ScriptProcessor
-    let fallbackTimer=null;
+    // 優先 AudioWorklet，若 500ms 內沒有送包，改走 ScriptProcessor
     const blobURL = URL.createObjectURL(new Blob([`
       class PCMWorklet extends AudioWorkletProcessor {
         constructor(){ super(); this.srcRate=sampleRate; this.dstRate=16000; }
@@ -120,7 +127,7 @@ async function join(){
             const idx=Math.floor(i*ratio); let s=ch[idx];
             s=Math.max(-1,Math.min(1,s)); pcm[i]=s<0?s*0x8000:s*0x7FFF;
           }
-          const pkt=320; // 20ms@16k
+          const pkt=320;
           for(let off=0; off<pcm.length; off+=pkt){
             const sl=pcm.subarray(off, off+pkt);
             if(sl.length===pkt) this.port.postMessage(sl.buffer,[sl.buffer]);
@@ -130,9 +137,7 @@ async function join(){
       }
       registerProcessor('pcm-worklet', PCMWorklet);
     `], {type:'application/javascript'}));
-    try{
-      await audioCtx.audioWorklet.addModule(blobURL);
-    }catch(_){}
+    try{ await audioCtx.audioWorklet.addModule(blobURL); }catch(_){}
 
     const source = audioCtx.createMediaStreamSource(stream);
     worklet = new AudioWorkletNode(audioCtx, 'pcm-worklet');
@@ -145,7 +150,7 @@ async function join(){
     try{
       source.connect(worklet);
       log(`✅ Worklet 已啟用（ctxRate=${audioCtx.sampleRate}Hz）`);
-      fallbackTimer = setTimeout(()=>{
+      setTimeout(()=>{
         if(txCount===0){
           log("⚠️ Worklet 似乎沒有送包，切換 ScriptProcessor 後備路線");
           try{ worklet.disconnect(); }catch(_){}
@@ -158,10 +163,7 @@ async function join(){
     }
 
     // 每秒顯示上行速率
-    txTimer = setInterval(()=>{
-      $('#tx').textContent = `TX: ${txCount} pkt/s`;
-      txCount = 0;
-    }, 1000);
+    txTimer = setInterval(()=>{ $('#tx').textContent = `TX: ${txCount} pkt/s`; txCount=0; }, 1000);
 
     joined = true; $('#join').disabled=true; $('#leave').disabled=false;
     pingTimer = setInterval(()=>{ try{ ws.send(JSON.stringify({type:"ping"})); }catch(_){ } }, 20000);
@@ -169,7 +171,6 @@ async function join(){
 
   ws.onmessage = (ev)=>{
     if (ev.data instanceof ArrayBuffer) {
-      log(`🔊 收到音訊 ${ev.data.byteLength} bytes`);
       playQueue.push(ev.data);
       if(!playing) playNext();
       return;
@@ -245,9 +246,7 @@ async function playNext(){
   const url=URL.createObjectURL(blob);
   const a=new Audio(url);
   a.onended=()=>{ URL.revokeObjectURL(url); playNext(); };
-  a.play().catch((e)=>{
-    log("🔇 自動播放被瀏覽器阻擋，請點一下頁面或按一下任意按鈕再試：" + e);
-  });
+  a.play().catch((e)=>{ log("🔇 自動播放被阻擋，請點一下頁面再試：" + e); });
 }
 
 $('#join').onclick = join;
@@ -255,8 +254,6 @@ $('#leave').onclick = leave;
 $('#mute').onchange = ()=>{ if(ws && ws.readyState===1) ws.send(JSON.stringify({type:'mute', value:$('#mute').checked})); };
 $('#playSelf').onchange = ()=>{ if(ws && ws.readyState===1) ws.send(JSON.stringify({type:'play_self', value:$('#playSelf').checked})); };
 navigator.mediaDevices.addEventListener('devicechange', listMics);
-
-// 先要求麥克風權限，讓 enumerateDevices 能拿到裝置名稱
 navigator.mediaDevices.getUserMedia({audio:true}).then(()=>listMics()).catch(()=>listMics());
 </script>
 </body>
