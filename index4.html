@@ -39,15 +39,7 @@
   <div class="row">
     <strong>播放輸出裝置：</strong>
     <select id="outDevice"></select>
-    <small>(選「AirPods Stereo」避免被切去喇叭；需 HTTPS 支援)</small>
-  </div>
-
-  <div class="row">
-    <label><input id="mute" type="checkbox"> 對自己禁音（不送出音訊）</label>
-    <label><input id="playSelf" type="checkbox" checked> 播放自己的譯音</label>
-    <label><input id="echo" type="checkbox" checked> 回聲抑制</label>
-    <label><input id="ns" type="checkbox" checked> 降噪</label>
-    <label><input id="agc" type="checkbox" checked> 自動增益</label>
+    <small>(選「AirPods Stereo」避免被切去喇叭)</small>
   </div>
 
   <div class="logs" id="logs"></div>
@@ -60,7 +52,7 @@
 const TUNNEL_HOST = "room-rug-submitted-invitations.trycloudflare.com";
 
 let ws=null, audioCtx=null, stream=null, sourceNode=null, analyser=null, meterTimer=null;
-let sinkNode=null, worklet=null, scriptProc=null; // 兩種輸入管線其一
+let sinkNode=null, worklet=null, scriptProc=null;
 let pingTimer=null, txTimer=null, playQueue=[], playing=false, joined=false;
 let sentPkts = 0, lastPkts = 0;
 
@@ -122,22 +114,36 @@ function stopMeter(){
   $('#bar').style.width='0%';
 }
 
+/* —— 取音：麥克風（高品質→失敗退回寬鬆） —— */
 async function startMicInput(){
   const deviceId = $('#inDevice').value || undefined;
-  const constraints = {
+
+  // 方案 A：盡可能高品質（AirPods 若切 HFP 可能不支援）
+  const A = {
     audio:{
       deviceId: deviceId ? {exact:deviceId} : undefined,
-      channelCount:2,     // 取原始立體聲，後面自行混單聲道
-      sampleRate:48000,
+      channelCount: {ideal: 2},
+      sampleRate:   {ideal: 48000},
       echoCancellation: $('#echo').checked,
       noiseSuppression: $('#ns').checked,
       autoGainControl:  $('#agc').checked
     }
   };
-  stream = await navigator.mediaDevices.getUserMedia(constraints);
+  // 方案 B：最寬鬆，讓瀏覽器自己配合（適配 HFP/16k）
+  const B = { audio:{ deviceId: deviceId ? {exact:deviceId} : undefined } };
+
+  try{
+    stream = await navigator.mediaDevices.getUserMedia(A);
+  }catch(e1){
+    log('⚠️ 高品質取音失敗，退回寬鬆約束：'+e1);
+    stream = await navigator.mediaDevices.getUserMedia(B);
+  }
+
+  validateAndReportStream('mic');
   await setupAudioGraph();
 }
 
+/* —— 取音：分頁音訊（Share Tab） —— */
 async function startTabAudioInput(){
   const disp = await navigator.mediaDevices.getDisplayMedia({ video:true, audio:true });
   const atrack = disp.getAudioTracks()[0];
@@ -147,14 +153,26 @@ async function startTabAudioInput(){
   }
   disp.getVideoTracks().forEach(t=>t.stop());
   stream = new MediaStream([atrack]);
-  await setupAudioGraph(/*fromTab=*/true);
+  validateAndReportStream('tab');
+  await setupAudioGraph();
 }
 
-async function setupAudioGraph(){
-  cleanupGraph(); // 先清乾淨舊的
+/* —— 檢查 stream 與 track，並回報參數 —— */
+function validateAndReportStream(tag){
+  if(!(stream instanceof MediaStream)) throw new Error('stream 不是 MediaStream');
+  const tracks = stream.getAudioTracks();
+  if(!tracks || tracks.length===0) throw new Error('MediaStream 沒有 audio track');
+  const t = tracks[0], s = t.getSettings?.() || {};
+  log(`🎙️ ${tag} 輸入裝置：${t.label||'(未知)'} | 設定：${JSON.stringify(s)}`);
+}
 
-  audioCtx = new (window.AudioContext||window.webkitAudioContext)({sampleRate:48000});
+/* —— 建立音訊處理管線（自動偵測樣率） —— */
+async function setupAudioGraph(){
+  cleanupGraph(); // 清乾淨舊的
+
+  audioCtx = new (window.AudioContext||window.webkitAudioContext)();
   await audioCtx.resume?.();
+
   sourceNode = audioCtx.createMediaStreamSource(stream);
 
   analyser = audioCtx.createAnalyser();
@@ -165,7 +183,7 @@ async function setupAudioGraph(){
   sinkNode.gain.value = 0.0;        // 0 音量，避免回授
   sinkNode.connect(audioCtx.destination);
 
-  // 優先試 AudioWorklet；1 秒內 TX 沒起來就 fallback ScriptProcessor
+  // 優先 Worklet；1 秒內 TX 沒起來就 fallback ScriptProcessor
   const ok = await tryInstallWorklet();
   setTimeout(()=>{
     if(sentPkts===0){
@@ -177,11 +195,12 @@ async function setupAudioGraph(){
   startMeter();
 }
 
+/* —— Worklet 路線（自動使用 audioCtx.sampleRate） —— */
 async function tryInstallWorklet(){
   try{
     const blobURL = URL.createObjectURL(new Blob([`
       class PCMWorklet extends AudioWorkletProcessor {
-        constructor(){ super(); this.srcRate=sampleRate; this.dstRate=16000; }
+        constructor(){ super(); this.dstRate=16000; }
         process(inputs, outputs){
           const input=inputs[0]; if(!input || input.length===0) return true;
           const ch0 = input[0] || new Float32Array(128);
@@ -189,17 +208,16 @@ async function tryInstallWorklet(){
           if(input.length>=2 && input[1]){
             const c1 = input[1]; mono = new Float32Array(ch0.length);
             for(let i=0;i<mono.length;i++){ mono[i] = 0.5*(ch0[i] + c1[i]); }
-          }else{
-            mono = ch0;
-          }
-          const ratio=this.srcRate/this.dstRate;
-          const outLen=Math.floor(mono.length/ratio);
-          const pcm=new Int16Array(outLen);
+          }else mono = ch0;
+
+          const ratio = sampleRate / this.dstRate;
+          const outLen = Math.floor(mono.length/ratio);
+          const pcm = new Int16Array(outLen);
           for(let i=0;i<outLen;i++){
             const idx=Math.floor(i*ratio); let s=mono[idx]||0;
             s=Math.max(-1,Math.min(1,s)); pcm[i]=s<0?s*0x8000:s*0x7FFF;
           }
-          const pkt=320; // 20ms @16k
+          const pkt=320; // 20ms@16k
           for(let off=0; off<pcm.length; off+=pkt){
             const sl=pcm.subarray(off, off+pkt);
             if(sl.length===pkt) this.port.postMessage(sl.buffer,[sl.buffer]);
@@ -222,6 +240,7 @@ async function tryInstallWorklet(){
     };
     sourceNode.connect(worklet);
     worklet.connect(sinkNode);
+    log(`✅ Worklet 已啟用（ctxRate=${audioCtx.sampleRate}Hz）`);
     return true;
   }catch(e){
     log('❌ 安裝 AudioWorklet 失敗：'+e);
@@ -229,44 +248,44 @@ async function tryInstallWorklet(){
   }
 }
 
+/* —— ScriptProcessor 後備（跟著 audioCtx.sampleRate） —— */
 function tryInstallScriptProcessor(){
   try{
-    // 4096 個 sample @48k ≈ 85ms；我們仍切 20ms 一包發送
+    const ctxRate = audioCtx.sampleRate;
     scriptProc = audioCtx.createScriptProcessor(4096, 2, 1);
     scriptProc.onaudioprocess = (ev)=>{
       const ib = ev.inputBuffer;
       const ch0 = ib.getChannelData(0);
       const ch1 = ib.numberOfChannels>1 ? ib.getChannelData(1) : null;
-      const mono48 = new Float32Array(ib.length);
-      for(let i=0;i<mono48.length;i++){
+      const mono = new Float32Array(ib.length);
+      for(let i=0;i<mono.length;i++){
         const a = ch0[i]||0, b = ch1?ch1[i]:0;
-        mono48[i] = ch1 ? 0.5*(a+b) : a;
+        mono[i] = ch1 ? 0.5*(a+b) : a;
       }
-      // 48k -> 16k 簡單抽取
-      const ratio = 48000/16000;
-      const outLen= Math.floor(mono48.length/ratio);
+      const ratio = ctxRate/16000;
+      const outLen= Math.floor(mono.length/ratio);
       const pcm   = new Int16Array(outLen);
       for(let i=0;i<outLen;i++){
-        const idx=Math.floor(i*ratio); let s=mono48[idx]||0;
+        const idx=Math.floor(i*ratio); let s=mono[idx]||0;
         s=Math.max(-1,Math.min(1,s)); pcm[i]=s<0?s*0x8000:s*0x7FFF;
       }
-      // 切 20ms/320samples
       const pkt=320;
       for(let off=0; off<pcm.length; off+=pkt){
         const sl=pcm.subarray(off, off+pkt);
         if(sl.length===pkt && !$('#mute').checked && ws && ws.readyState===1){
-          // ScriptProcessor 在主執行緒，直接發送
           ws.send(sl.buffer); sentPkts++;
         }
       }
     };
     sourceNode.connect(scriptProc);
     scriptProc.connect(sinkNode);
+    log(`✅ ScriptProcessor 已啟用（ctxRate=${ctxRate}Hz）`);
   }catch(e){
     log('❌ 安裝 ScriptProcessor 失敗：'+e);
   }
 }
 
+/* —— 清理音訊圖 —— */
 function cleanupGraph(){
   try{ worklet && worklet.disconnect(); }catch(_){}
   try{ scriptProc && scriptProc.disconnect(); }catch(_){}
@@ -279,6 +298,7 @@ function cleanupGraph(){
   audioCtx=null; stream=null;
 }
 
+/* —— 播放輸出裝置（AirPods Stereo） —— */
 async function setOutputSink(){
   const outSel = $('#outDevice').value;
   const player = $('#player');
@@ -288,6 +308,7 @@ async function setOutputSink(){
   }
 }
 
+/* —— 連線/事件 —— */
 async function join(){
   if (joined) return;
   const name = $('#name').value.trim() || 'Guest';
@@ -301,7 +322,7 @@ async function join(){
     $('#status').textContent="已連線"; $('#status').classList.add('now');
     ws.send(JSON.stringify({name, play_self: $('#playSelf').checked}));
 
-    // 音源
+    // 取音
     const mode = document.querySelector('input[name="mode"]:checked').value;
     try{
       if(mode==='tab') await startTabAudioInput();
@@ -311,7 +332,7 @@ async function join(){
       return;
     }
 
-    // 播放輸出裝置（AirPods Stereo）
+    // 指定輸出裝置
     await setOutputSink();
 
     joined = true; $('#join').disabled=true; $('#leave').disabled=false;
@@ -319,15 +340,12 @@ async function join(){
     pingTimer = setInterval(()=>{ try{ ws.send(JSON.stringify({type:"ping"})); }catch(_){ } }, 20000);
     startTXCounter();
 
-    // 取得權限後，再列一次裝置（會看得到實名）
+    // 拿到權限後刷新裝置名稱
     enumerateDevices().catch(()=>{});
   };
 
   ws.onmessage = (ev)=>{
-    if(ev.data instanceof ArrayBuffer){
-      queuePlay(ev.data);
-      return;
-    }
+    if(ev.data instanceof ArrayBuffer){ queuePlay(ev.data); return; }
     try{
       const o=JSON.parse(ev.data);
       if(o.type==="join")   log(`🔵 ${o.name} 加入，人數 ${o.count}`);
@@ -352,8 +370,8 @@ async function join(){
 function cleanup(){
   cleanupGraph();
   try{ clearInterval(pingTimer); }catch(_){}
-  stopTXCounter();
-  pingTimer=null;
+  try{ clearInterval(txTimer); }catch(_){}
+  pingTimer=txTimer=null;
 }
 
 function leave(){
@@ -362,7 +380,7 @@ function leave(){
   $('#join').disabled=false; $('#leave').disabled=true; joined=false;
 }
 
-/* 播放佇列，使用單一 <audio> + setSinkId 指定輸出裝置 */
+/* —— 播放佇列（綁定 setSinkId） —— */
 async function queuePlay(arrayBuf){
   const blob = new Blob([arrayBuf], {type:'audio/wav'});
   const url  = URL.createObjectURL(blob);
@@ -374,20 +392,20 @@ async function playNext(){
   playing=true;
   const url = playQueue.shift();
   const player = $('#player');
-  // 確保輸出裝置不被系統改走
-  await setOutputSink();
+  await setOutputSink(); // 確認輸出裝置
   player.src = url;
   player.onended = ()=>{ URL.revokeObjectURL(url); playNext(); };
   player.play().catch(e=>{ log('⚠️ 自動播放被阻擋，請點一下頁面：'+e); });
 }
 
+/* 綁定 UI */
 $('#join').onclick = join;
 $('#leave').onclick = leave;
 $('#mute').onchange = ()=>{ if(ws && ws.readyState===1) ws.send(JSON.stringify({type:'mute', value:$('#mute').checked})); };
 $('#playSelf').onchange = ()=>{ if(ws && ws.readyState===1) ws.send(JSON.stringify({type:'play_self', value:$('#playSelf').checked})); };
 $('#outDevice').onchange = ()=> setOutputSink();
 
-// 初始列裝置（沒有權限時名稱可能空白）；插拔耳機時自動刷新（不改選中值）
+/* 初始列裝置；插拔耳機時自動刷新 */
 enumerateDevices().catch(()=>{});
 navigator.mediaDevices.addEventListener?.('devicechange', ()=> enumerateDevices().catch(()=>{}));
 </script>
