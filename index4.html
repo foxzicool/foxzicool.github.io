@@ -22,6 +22,7 @@
     <button id="join">加入</button>
     <button id="leave" disabled>離開</button>
     <span class="pill" id="status">未連線</span>
+    <span class="pill" id="tx">TX: 0 pkt/s</span>
   </div>
 
   <div class="row" style="margin-top:10px">
@@ -35,11 +36,11 @@
   <div class="logs" id="logs"></div>
 
 <script>
-/* 改成你當前 Cloudflare Tunnel 網域 */
 const TUNNEL_HOST = "outreach-travelling-printers-planes.trycloudflare.com";
 
-let ws=null, audioCtx=null, worklet=null, stream=null, pingTimer=null;
+let ws=null, audioCtx=null, worklet=null, stream=null, pingTimer=null, txTimer=null;
 let playQueue=[], playing=false, joined=false;
+let sentPkts = 0, lastPkts = 0;
 
 const $  = (s)=>document.querySelector(s);
 const log= (s)=>{ const el=$('#logs'); el.textContent+=s+"\n"; el.scrollTop=el.scrollHeight; };
@@ -48,15 +49,14 @@ async function join(){
   if (joined) return;
   const name = $('#name').value.trim() || 'Guest';
 
-  ws = new WebSocket(`wss://${TUNNEL_HOST}/ws`);
+  const wsUrl = `wss://${TUNNEL_HOST}/ws`;
+  console.log("WS URL =", wsUrl);
+  ws = new WebSocket(wsUrl);
   ws.binaryType = 'arraybuffer';
 
   ws.onopen = async ()=>{
     $('#status').textContent="已連線"; $('#status').classList.add('now');
-    // 先送 hello，確保握手完成再送音訊
     ws.send(JSON.stringify({name, play_self: $('#playSelf').checked}));
-
-    // 啟動麥克風
     stream = await navigator.mediaDevices.getUserMedia({
       audio:{
         channelCount:1, sampleRate:48000,
@@ -96,12 +96,17 @@ async function join(){
     worklet.port.onmessage = (e)=>{
       if(!$('#mute').checked && ws && ws.readyState===1){
         ws.send(e.data);
+        sentPkts++;
       }
     };
     source.connect(worklet);
 
     joined = true; $('#join').disabled=true; $('#leave').disabled=false;
     pingTimer = setInterval(()=>{ try{ ws.send(JSON.stringify({type:"ping"})); }catch(_){ } }, 20000);
+    txTimer   = setInterval(()=>{
+      const diff = sentPkts - lastPkts; lastPkts = sentPkts;
+      $('#tx').textContent = `TX: ${diff} pkt/s`;
+    }, 1000);
   };
 
   ws.onmessage = (ev)=>{
@@ -118,7 +123,7 @@ async function join(){
       if(o.type==="partial")log(`📝 ${o.from}（${o.dir}）\n${o.text}`);
       if(o.type==="simul")  log(`🎧 ${o.from}（${o.dir} 邊播）\n新增：${o.src_add}\n翻譯：${o.mt_add}`);
       if(o.type==="final")  log(`✅ ${o.from}（${o.dir} 完整）\n原文：${o.text}\n翻譯：${o.mt}`);
-      if(o.type==="pong")   {/* keepalive */}
+      if(o.type==="stat")   log(`📶 ${o.from} 上行: ${o.rx_frames} frames`);
       if(o.type==="error")  log(`❌ ${o.msg}`);
     }catch(_){}
   };
@@ -136,7 +141,8 @@ function cleanupAudio(){
   try{ stream && stream.getTracks().forEach(t=>t.stop()); }catch(_){}
   try{ audioCtx && audioCtx.close(); }catch(_){}
   try{ clearInterval(pingTimer); }catch(_){}
-  worklet=null; audioCtx=null; stream=null; pingTimer=null;
+  try{ clearInterval(txTimer); }catch(_){}
+  worklet=null; audioCtx=null; stream=null; pingTimer=null; txTimer=null;
 }
 
 function leave(){
