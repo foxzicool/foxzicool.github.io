@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>中↔韓 同聲傳譯（完整句才說｜原音+譯音）</title>
+<title>中↔韓 同聲傳譯（完整句｜原音+譯音，避免自聽）</title>
 <style>
   body{font-family:system-ui,-apple-system,"Noto Sans TC","Microsoft JhengHei",Arial;padding:20px;max-width:900px;margin:auto}
   .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
@@ -16,7 +16,7 @@
   .hint{color:#666;font-size:13px}
 </style>
 <body>
-  <h2>中↔韓 同聲傳譯（完整句才說｜原音+譯音）</h2>
+  <h2>中↔韓 同聲傳譯（完整句｜原音+譯音，避免自聽）</h2>
 
   <div class="row">
     <label>名稱(이름)</label>
@@ -33,7 +33,8 @@
 
   <div class="row" style="margin-top:10px">
     <label><input id="mute" type="checkbox"> 對自己禁音（不送出麥克風）</label>
-    <label><input id="playSelf" type="checkbox" checked> 播放自己的原音/譯音</label>
+    <label><input id="playSelfOrig" type="checkbox"> 播放自己的原音</label>
+    <label><input id="playSelfTrans" type="checkbox" checked> 播放自己的譯音</label>
     <label><input id="echo" type="checkbox" checked> 回聲抑制</label>
     <label><input id="ns" type="checkbox" checked> 降噪</label>
     <label><input id="agc" type="checkbox" checked> 自動增益</label>
@@ -43,7 +44,7 @@
   <div class="row" style="margin-top:10px">
     <label for="micSel">輸入裝置(마이크)</label>
     <select id="micSel"></select>
-    <span class="hint">提示：若聽不到他人聲音，請關閉喇叭外放改用耳機，避免回授觸發過濾。</span>
+    <span class="hint">建議配戴耳機以避免回授。</span>
   </div>
 
   <div class="logs" id="logs"></div>
@@ -101,6 +102,7 @@ function leave(){
 }
 
 async function fallbackScriptProcessor(source){
+  // ★ 不要把麥克風接到 destination，避免「自聽」回放自己的聲音
   const sp = audioCtx.createScriptProcessor(2048, 1, 1);
   sp.onaudioprocess = (e)=>{
     const ch = e.inputBuffer.getChannelData(0);
@@ -123,7 +125,7 @@ async function fallbackScriptProcessor(source){
       }
     }
   };
-  try{ source.connect(sp); sp.connect(audioCtx.destination); }catch(_){}
+  try{ source.connect(sp); /* sp 不接 destination */ }catch(_){}
   log(`✅ ScriptProcessor 已啟用（ctxRate=${audioCtx.sampleRate}Hz）`);
 }
 
@@ -133,13 +135,20 @@ async function join(){
 
   const name = ($('#name').value || 'Guest').trim().slice(0,40);
   const srcLang = $('#srcLang').value; // 'zh' | 'ko'
+  const playSelfOrig  = $('#playSelfOrig').checked;
+  const playSelfTrans = $('#playSelfTrans').checked;
 
   ws = new WebSocket(`${TUNNEL_HOST.replace('https://','wss://')}/ws`);
   ws.binaryType = 'arraybuffer';
 
   ws.onopen = async ()=>{
     $('#status').textContent="已連線"; $('#status').classList.add('now');
-    ws.send(JSON.stringify({name, play_self: $('#playSelf').checked, src_lang: srcLang}));
+    ws.send(JSON.stringify({
+      name,
+      src_lang: srcLang,
+      play_self_orig: playSelfOrig,
+      play_self_trans: playSelfTrans
+    }));
 
     try{
       const devId = $('#micSel').value || undefined;
@@ -194,7 +203,7 @@ async function join(){
             try{ worklet.disconnect(); }catch(_){}
             fallbackScriptProcessor(source);
           }
-        }, 500);
+        }, 600);
       } else {
         const source = audioCtx.createMediaStreamSource(stream);
         fallbackScriptProcessor(source);
@@ -230,15 +239,14 @@ async function join(){
 }
 
 function sniffMime(buf){
-  // WAV = 'RIFF' .... 'WAVE' header
+  // WAV = 'RIFF' .... 'WAVE'
   if (buf.byteLength >= 12){
     const dv = new DataView(buf);
     const riff = String.fromCharCode(dv.getUint8(0),dv.getUint8(1),dv.getUint8(2),dv.getUint8(3));
     const wave = String.fromCharCode(dv.getUint8(8),dv.getUint8(9),dv.getUint8(10),dv.getUint8(11));
-    if (riff === 'RIFF' && wave === 'WAVE') return 'audio/wav';
+    if (riff === 'RIFF' && wave === 'WAVE') return 'audio/wav';   // 原音
   }
-  // 其他一律當 MP3（edge-tts）
-  return 'audio/mpeg';
+  return 'audio/mpeg';  // 譯音
 }
 
 async function playNext(){
@@ -250,13 +258,16 @@ async function playNext(){
   const url=URL.createObjectURL(blob);
   const a=new Audio(url);
   a.onended=()=>{ URL.revokeObjectURL(url); playNext(); };
-  a.play().catch(()=>{ /* 某些瀏覽器需互動授權才自動播放 */ });
+  a.play().catch(()=>{ /* 需要使用者互動才自動播放時忽略 */ });
 }
 
 $('#join').onclick = join;
 $('#leave').onclick = leave;
 $('#mute').onchange = ()=>{ if(ws && ws.readyState===1) ws.send(JSON.stringify({type:'mute', value:$('#mute').checked})); };
-$('#playSelf').onchange = ()=>{ if(ws && ws.readyState===1) ws.send(JSON.stringify({type:'play_self', value:$('#playSelf').checked})); };
+// 動態更新「播放自己的原音/譯音」
+$('#playSelfOrig').onchange  = ()=>{ if(ws && ws.readyState===1) ws.send(JSON.stringify({type:'play_self', value:{orig: $('#playSelfOrig').checked}})); };
+$('#playSelfTrans').onchange = ()=>{ if(ws && ws.readyState===1) ws.send(JSON.stringify({type:'play_self', value:{trans: $('#playSelfTrans').checked}})); };
+
 navigator.mediaDevices.addEventListener('devicechange', listMics);
 listMics();
 </script>
