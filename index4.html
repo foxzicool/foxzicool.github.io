@@ -2,38 +2,38 @@
 <html lang="zh-Hant">
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>中↔韓 同聲傳譯（完整句才說）+ 原音直通</title>
+<title>中↔韓 同聲傳譯（完整句才說｜原音+譯音）</title>
 <style>
-  body{font-family:system-ui,-apple-system,"Noto Sans TC","Microsoft JhengHei",Arial;padding:20px;max-width:880px;margin:auto}
+  body{font-family:system-ui,-apple-system,"Noto Sans TC","Microsoft JhengHei",Arial;padding:20px;max-width:900px;margin:auto}
   .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
   input,select,button{padding:8px 10px;border:1px solid #bbb;border-radius:10px;background:#fff}
   button{cursor:pointer}
   button[disabled]{opacity:.5;cursor:not-allowed}
   .pill{padding:4px 10px;border-radius:999px;background:#efefef;font-size:12px}
-  .logs{margin-top:12px;padding:10px;border:1px solid #eee;border-radius:10px;background:#fafafa;height:360px;overflow:auto;font-size:14px;white-space:pre-wrap}
+  .logs{margin-top:12px;padding:10px;border:1px solid #eee;border-radius:10px;background:#fafafa;height:380px;overflow:auto;font-size:14px;white-space:pre-wrap}
   .now{color:#1b7fbd}
   .stat{font-family:monospace}
+  .hint{color:#666;font-size:13px}
 </style>
 <body>
-  <h2>中↔韓 同聲傳譯（完整句才說）</h2>
+  <h2>中↔韓 同聲傳譯（完整句才說｜原音+譯音）</h2>
 
   <div class="row">
-    <label>名稱</label>
-    <input id="name" type="text" placeholder="你的名字" value="Public">
-    <label>來源語言</label>
+    <label>名稱(이름)</label>
+    <input id="name" type="text" placeholder="你的名字(이름)" value="Public">
+    <label>來源語言(원어)</label>
     <select id="srcLang">
       <option value="zh" selected>中文（強制）</option>
       <option value="ko">韓文（強制）</option>
     </select>
-    <button id="join">加入</button>
-    <button id="leave" disabled>離開</button>
+    <button id="join">加入(입장)</button>
+    <button id="leave" disabled>離開(나가기)</button>
     <span class="pill" id="status">未連線</span>
   </div>
 
   <div class="row" style="margin-top:10px">
     <label><input id="mute" type="checkbox"> 對自己禁音（不送出麥克風）</label>
-    <label><input id="playSelf" type="checkbox" checked> 播放自己的譯音</label>
-    <label><input id="wantRaw" type="checkbox" checked> 原音直通（聽別人的原聲）</label>
+    <label><input id="playSelf" type="checkbox" checked> 播放自己的原音/譯音</label>
     <label><input id="echo" type="checkbox" checked> 回聲抑制</label>
     <label><input id="ns" type="checkbox" checked> 降噪</label>
     <label><input id="agc" type="checkbox" checked> 自動增益</label>
@@ -41,8 +41,9 @@
   </div>
 
   <div class="row" style="margin-top:10px">
-    <label for="micSel">輸入裝置</label>
+    <label for="micSel">輸入裝置(마이크)</label>
     <select id="micSel"></select>
+    <span class="hint">提示：若聽不到他人聲音，請關閉喇叭外放改用耳機，避免回授觸發過濾。</span>
   </div>
 
   <div class="logs" id="logs"></div>
@@ -138,12 +139,7 @@ async function join(){
 
   ws.onopen = async ()=>{
     $('#status').textContent="已連線"; $('#status').classList.add('now');
-    ws.send(JSON.stringify({
-      name,
-      play_self: $('#playSelf').checked,
-      src_lang: srcLang,
-      want_raw: $('#wantRaw').checked  // 新增：讓後端知道要不要原音
-    }));
+    ws.send(JSON.stringify({name, play_self: $('#playSelf').checked, src_lang: srcLang}));
 
     try{
       const devId = $('#micSel').value || undefined;
@@ -155,7 +151,7 @@ async function join(){
     audioCtx = new (window.AudioContext||window.webkitAudioContext)({sampleRate:48000});
     await audioCtx.resume().catch(()=>{});
 
-    // 先試 AudioWorklet，沒送包就 fallback
+    // 優先 AudioWorklet，沒送包就 fallback
     try{
       if (audioCtx.audioWorklet) {
         const blobURL = URL.createObjectURL(new Blob([`
@@ -183,8 +179,9 @@ async function join(){
         await audioCtx.audioWorklet.addModule(blobURL);
         const source = audioCtx.createMediaStreamSource(stream);
         worklet = new AudioWorkletNode(audioCtx, 'pcm-worklet');
+        let sent=0;
         worklet.port.onmessage = (e)=>{
-          txPkts++;
+          sent++; txPkts++;
           if(!$('#mute').checked && ws && ws.readyState===1){
             ws.send(e.data);
           }
@@ -192,7 +189,7 @@ async function join(){
         source.connect(worklet);
         log(`✅ Worklet 已啟用（ctxRate=${audioCtx.sampleRate}Hz）`);
         setTimeout(()=>{
-          if(txPkts===0){
+          if(sent===0){
             log("⚠️ Worklet 無送包，改用 ScriptProcessor");
             try{ worklet.disconnect(); }catch(_){}
             fallbackScriptProcessor(source);
@@ -215,22 +212,8 @@ async function join(){
 
   ws.onmessage = (ev)=>{
     if(ev.data instanceof ArrayBuffer){
-      // 新：第一個 byte 標示類型
-      const u8 = new Uint8Array(ev.data);
-      const kind = u8[0];
-      const audioData = ev.data.slice(1);
-      if(kind === 0x01){
-        // TTS (MP3)
-        playBlob(audioData, 'audio/mpeg');
-      }else if(kind === 0x02){
-        // RAW (WAV)
-        if($('#wantRaw').checked){
-          playBlob(audioData, 'audio/wav');
-        }
-      }else{
-        // 舊版兼容（沒有前綴）：當作 MP3
-        playBlob(ev.data, 'audio/mpeg');
-      }
+      playQueue.push(ev.data);
+      if(!playing) playNext();
       return;
     }
     try{
@@ -238,6 +221,7 @@ async function join(){
       if(o.type==="join")    log(`🔵 ${o.name} 加入，人數 ${o.count}`);
       if(o.type==="leave")   log(`⚪ ${o.name} 離開，人數 ${o.count}`);
       if(o.type==="final")   log(`✅ ${o.from}（${o.dir}）\n原文：${o.text}\n翻譯：${o.mt}`);
+      if(o.type==="mute")    log(`🔇 ${o.name} ${o.muted?"已靜音":"取消靜音"}`);
       if(o.type==="error")   log(`❌ ${o.msg}`);
     }catch(_){}
   };
@@ -245,19 +229,34 @@ async function join(){
   ws.onclose = ()=>{ log("連線關閉"); leave(); };
 }
 
-function playBlob(buf, mime){
+function sniffMime(buf){
+  // WAV = 'RIFF' .... 'WAVE' header
+  if (buf.byteLength >= 12){
+    const dv = new DataView(buf);
+    const riff = String.fromCharCode(dv.getUint8(0),dv.getUint8(1),dv.getUint8(2),dv.getUint8(3));
+    const wave = String.fromCharCode(dv.getUint8(8),dv.getUint8(9),dv.getUint8(10),dv.getUint8(11));
+    if (riff === 'RIFF' && wave === 'WAVE') return 'audio/wav';
+  }
+  // 其他一律當 MP3（edge-tts）
+  return 'audio/mpeg';
+}
+
+async function playNext(){
+  if(playQueue.length===0){ playing=false; return; }
+  playing=true;
+  const buf=playQueue.shift();
+  const mime = sniffMime(buf);
   const blob=new Blob([buf],{type:mime});
   const url=URL.createObjectURL(blob);
   const a=new Audio(url);
-  a.onended=()=>{ URL.revokeObjectURL(url); };
-  a.play().catch(()=>{});
+  a.onended=()=>{ URL.revokeObjectURL(url); playNext(); };
+  a.play().catch(()=>{ /* 某些瀏覽器需互動授權才自動播放 */ });
 }
 
 $('#join').onclick = join;
 $('#leave').onclick = leave;
-$('#mute').onchange     = ()=>{ if(ws && ws.readyState===1) ws.send(JSON.stringify({type:'mute', value:$('#mute').checked})); };
+$('#mute').onchange = ()=>{ if(ws && ws.readyState===1) ws.send(JSON.stringify({type:'mute', value:$('#mute').checked})); };
 $('#playSelf').onchange = ()=>{ if(ws && ws.readyState===1) ws.send(JSON.stringify({type:'play_self', value:$('#playSelf').checked})); };
-$('#wantRaw').onchange  = ()=>{ if(ws && ws.readyState===1) ws.send(JSON.stringify({type:'want_raw', value:$('#wantRaw').checked})); };
 navigator.mediaDevices.addEventListener('devicechange', listMics);
 listMics();
 </script>
