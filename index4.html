@@ -49,7 +49,7 @@
 
 <script>
 /* 換成你當前 cloudflared 的主機名（不要含 https://） */
-const TUNNEL_HOST = "room-rug-submitted-invitations.trycloudflare.com";
+const TUNNEL_HOST = "outreach-travelling-printers-planes.trycloudflare.com";
 
 let ws=null, audioCtx=null, stream=null, sourceNode=null, analyser=null, meterTimer=null;
 let sinkNode=null, worklet=null, scriptProc=null;
@@ -155,24 +155,40 @@ async function startTabAudioInput(){
   await setupAudioGraph();
 }
 
-/* —— 檢查 stream 與 track，並回報參數 —— */
+/* —— 檢查 stream 與 track，並回報參數（不再用 instanceof） —— */
 function validateAndReportStream(tag){
-  if(!(stream instanceof MediaStream)) throw new Error('stream 不是 MediaStream');
+  if(!stream || typeof stream.getAudioTracks !== 'function'){
+    throw new Error('stream 缺少 getAudioTracks');
+  }
   const tracks = stream.getAudioTracks();
   if(!tracks || tracks.length===0) throw new Error('MediaStream 沒有 audio track');
   const t = tracks[0], s = t.getSettings?.() || {};
   log(`🎙️ ${tag} 輸入裝置：${t.label||'(未知)'} | 設定：${JSON.stringify(s)}`);
 }
 
-/* —— 建立音訊處理管線（自動偵測樣率） —— */
+/* —— 建立音訊處理管線（自動偵測樣率；若失敗則重包裝 MediaStream） —— */
 async function setupAudioGraph(){
   cleanupGraph();
 
   audioCtx = new (window.AudioContext||window.webkitAudioContext)();
   await audioCtx.resume?.();
 
-  if(!(stream instanceof MediaStream)) throw new Error('Audio graph：stream 不是 MediaStream');
-  sourceNode = audioCtx.createMediaStreamSource(stream);
+  // 有些情況 stream 不是同一 realm 的 MediaStream，先嘗試直接建立
+  try{
+    sourceNode = audioCtx.createMediaStreamSource(stream);
+  }catch(e1){
+    log('⚠️ createMediaStreamSource 失敗，嘗試以本 realm 重新包裝 tracks：'+e1);
+    try{
+      const tracks = (stream && typeof stream.getAudioTracks==='function') ? stream.getAudioTracks() : [];
+      const ms2 = new MediaStream(tracks);
+      sourceNode = audioCtx.createMediaStreamSource(ms2);
+      stream = ms2; // 用重包裝後的流
+      log('♻️ 已成功以本 realm 重新包裝 MediaStream');
+    }catch(e2){
+      log('❌ 重新包裝仍失敗：'+e2);
+      throw e2;
+    }
+  }
 
   analyser = audioCtx.createAnalyser();
   analyser.fftSize = 2048;
@@ -188,7 +204,7 @@ async function setupAudioGraph(){
       log('⚠️ Worklet 似乎沒有送包，切換 ScriptProcessor 後備路線');
       tryInstallScriptProcessor();
     }
-  }, 1000);
+  }, 1200);
 
   startMeter();
 }
