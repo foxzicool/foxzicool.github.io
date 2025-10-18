@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>中↔韓 同聲傳譯（完整句才說｜原音+譯音）</title>
+<title>中↔韓 同聲傳譯（完整句｜別人的原音+譯音）</title>
 <style>
   body{font-family:system-ui,-apple-system,"Noto Sans TC","Microsoft JhengHei",Arial;padding:20px;max-width:900px;margin:auto}
   .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
@@ -16,7 +16,7 @@
   .hint{color:#666;font-size:13px}
 </style>
 <body>
-  <h2>中↔韓 同聲傳譯（完整句才說｜原音+譯音）</h2>
+  <h2>中↔韓 同聲傳譯（完整句｜別人的原音+譯音）</h2>
 
   <div class="row">
     <label>名稱(이름)</label>
@@ -33,7 +33,6 @@
 
   <div class="row" style="margin-top:10px">
     <label><input id="mute" type="checkbox"> 對自己禁音（不送出麥克風）</label>
-    <label><input id="playSelf" type="checkbox" checked> 播放自己的原音/譯音</label>
     <label><input id="echo" type="checkbox" checked> 回聲抑制</label>
     <label><input id="ns" type="checkbox" checked> 降噪</label>
     <label><input id="agc" type="checkbox" checked> 自動增益</label>
@@ -43,7 +42,7 @@
   <div class="row" style="margin-top:10px">
     <label for="micSel">輸入裝置(마이크)</label>
     <select id="micSel"></select>
-    <span class="hint">提示：若聽不到他人聲音，請關閉喇叭外放改用耳機，避免回授觸發過濾。</span>
+    <span class="hint">建議用耳機，避免回授造成誤觸發。</span>
   </div>
 
   <div class="logs" id="logs"></div>
@@ -139,7 +138,7 @@ async function join(){
 
   ws.onopen = async ()=>{
     $('#status').textContent="已連線"; $('#status').classList.add('now');
-    ws.send(JSON.stringify({name, play_self: $('#playSelf').checked, src_lang: srcLang}));
+    ws.send(JSON.stringify({name, src_lang: srcLang}));
 
     try{
       const devId = $('#micSel').value || undefined;
@@ -250,13 +249,12 @@ async function playNext(){
   const url=URL.createObjectURL(blob);
   const a=new Audio(url);
   a.onended=()=>{ URL.revokeObjectURL(url); playNext(); };
-  a.play().catch(()=>{ /* 某些瀏覽器需互動授權才自動播放 */ });
+  a.play().catch(()=>{ /* 某些瀏覽器需要使用者互動後才可自動播放 */ });
 }
 
 $('#join').onclick = join;
 $('#leave').onclick = leave;
 $('#mute').onchange = ()=>{ if(ws && ws.readyState===1) ws.send(JSON.stringify({type:'mute', value:$('#mute').checked})); };
-$('#playSelf').onchange = ()=>{ if(ws && ws.readyState===1) ws.send(JSON.stringify({type:'play_self', value:$('#playSelf').checked})); };
 navigator.mediaDevices.addEventListener('devicechange', listMics);
 listMics();
 </script>
