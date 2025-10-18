@@ -4,237 +4,114 @@
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
 <title>中↔韓 同聲傳譯（單房、邊說邊播）</title>
 <style>
-  body{font-family:system-ui,-apple-system,"Noto Sans TC","Microsoft JhengHei",Arial;padding:20px;max-width:900px;margin:auto}
-  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
-  input[type=text], select{padding:8px 10px;border:1px solid #ccc;border-radius:10px;min-width:180px}
+  body{font-family:system-ui,-apple-system,"Noto Sans TC","Microsoft JhengHei",Arial;padding:20px;max-width:860px;margin:auto}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  input[type=text]{padding:8px 10px;border:1px solid #ccc;border-radius:10px;min-width:180px}
   button{padding:8px 14px;border-radius:10px;border:1px solid #bbb;background:#fff;cursor:pointer}
   button[disabled]{opacity:.5;cursor:not-allowed}
   .pill{padding:4px 10px;border-radius:999px;background:#efefef;font-size:12px}
-  .logs{margin-top:12px;padding:10px;border:1px solid #eee;border-radius:10px;background:#fafafa;height:340px;overflow:auto;font-size:14px;white-space:pre-wrap}
+  .logs{margin-top:12px;padding:10px;border:1px solid #eee;border-radius:10px;background:#fafafa;height:360px;overflow:auto;font-size:14px;white-space:pre-wrap}
   .now{color:#1b7fbd}
-  #meter{width:180px;height:10px;background:#eee;border-radius:6px;overflow:hidden}
-  #bar{display:block;height:100%;width:0%;background:#4caf50}
+  .stat{font-family:monospace}
 </style>
 <body>
   <h2>中↔韓 同聲傳譯（單一房間）</h2>
 
   <div class="row">
     <label>名稱</label>
-    <input id="name" type="text" placeholder="你的名字">
+    <input id="name" type="text" placeholder="你的名字" value="Public">
     <button id="join">加入</button>
     <button id="leave" disabled>離開</button>
     <span class="pill" id="status">未連線</span>
-    <span class="pill" id="tx">TX: 0 pkt/s</span>
   </div>
 
-  <div class="row">
-    <strong>輸入來源：</strong>
-    <label><input type="radio" name="mode" value="mic" checked> 麥克風</label>
-    <label><input type="radio" name="mode" value="tab"> 分頁音訊（Share Tab）</label>
-    <select id="inDevice"></select>
-    <button id="refresh">刷新裝置</button>
-    <span id="meter" title="輸入音量"><span id="bar"></span></span>
-  </div>
-
-  <div class="row">
+  <div class="row" style="margin-top:10px">
     <label><input id="mute" type="checkbox"> 對自己禁音（不送出麥克風）</label>
     <label><input id="playSelf" type="checkbox" checked> 播放自己的譯音</label>
+    <label><input id="echo" type="checkbox" checked> 回聲抑制</label>
+    <label><input id="ns" type="checkbox" checked> 降噪</label>
+    <label><input id="agc" type="checkbox" checked> 自動增益</label>
+    <span class="stat" id="tx">TX: 0 pkt/s</span>
   </div>
 
-  <div class="row">
-    <strong>播放輸出裝置：</strong>
-    <select id="outDevice"></select>
-    <small>(選「AirPods Stereo」避免被切去喇叭)</small>
+  <div class="row" style="margin-top:10px">
+    <label for="micSel">輸入裝置</label>
+    <select id="micSel"></select>
   </div>
 
   <div class="logs" id="logs"></div>
 
-  <audio id="player" hidden></audio>
-
 <script>
-/* 換成你當前 cloudflared 主機名（不要含 https://） */
-const TUNNEL_HOST = "room-rug-submitted-invitations.trycloudflare.com";
+/* 換成你的 Cloudflare Tunnel 網域（含 https://） */
+const TUNNEL_HOST = "https://outreach-travelling-printers-planes.trycloudflare.com";
 
-let ws=null, audioCtx=null, sourceNode=null, analyser=null, meterTimer=null;
-let sinkNode=null, worklet=null, scriptProc=null;
-let activeStream=null;   // 目前音訊圖使用中的串流（只關舊的）
-let pingTimer=null, txTimer=null, playQueue=[], playing=false, joined=false;
-let sentPkts = 0, lastPkts = 0;
+let ws=null, audioCtx=null, worklet=null, stream=null, pingTimer=null, txTimer=null;
+let playQueue=[], playing=false, joined=false;
+let txCount=0;
 
 const $  = (s)=>document.querySelector(s);
-const log= (s)=>{ const el=$('#logs'); if(!el) return; el.textContent+=s+"\n"; el.scrollTop=el.scrollHeight; };
+const log= (s)=>{ const el=$('#logs'); el.textContent+=s+"\n"; el.scrollTop=el.scrollHeight; };
 
-async function enumerateDevices(){
+async function listMics(){
   const devs = await navigator.mediaDevices.enumerateDevices();
-  const inputs = devs.filter(d=>d.kind==='audioinput');
-  const outputs= devs.filter(d=>d.kind==='audiooutput');
-
-  const inSel = $('#inDevice');  if(inSel){ inSel.innerHTML='';
-    inputs.forEach(d=>{
-      const opt=document.createElement('option');
-      opt.value=d.deviceId;
-      opt.textContent=d.label || `音訊輸入 (${d.deviceId.slice(0,6)})`;
-      inSel.appendChild(opt);
-    });
-  }
-
-  const outSel= $('#outDevice'); if(outSel){ outSel.innerHTML='';
-    outputs.forEach(d=>{
-      const opt=document.createElement('option');
-      opt.value=d.deviceId;
-      opt.textContent=d.label || `輸出 (${d.deviceId.slice(0,6)})`;
-      outSel.appendChild(opt);
-    });
-  }
+  const mics = devs.filter(d=>d.kind==="audioinput");
+  const sel = $('#micSel'); sel.innerHTML="";
+  mics.forEach(d=>{
+    const opt=document.createElement('option');
+    opt.value=d.deviceId; opt.textContent=d.label || `麥克風 (${d.deviceId.slice(0,6)}…)`;
+    sel.appendChild(opt);
+  });
 }
 
-function startTXCounter(){
-  const txEl = $('#tx');
-  txTimer = setInterval(()=>{
-    const diff = sentPkts - lastPkts; lastPkts = sentPkts;
-    if(txEl) txEl.textContent = `TX: ${diff} pkt/s`;
-  }, 1000);
-}
-function stopTXCounter(){ try{ clearInterval(txTimer); }catch(_){ } txTimer=null; }
-
-function startMeter(){
-  if(!analyser) return;
-  const buf = new Float32Array(analyser.fftSize);
-  const bar = $('#bar');
-  const tick = ()=>{
-    if(!analyser) return;
-    analyser.getFloatTimeDomainData(buf);
-    let sum=0; for(let i=0;i<buf.length;i++){ const v=buf[i]; sum += v*v; }
-    const rms = Math.sqrt(sum/buf.length);
-    const pct = Math.min(100, Math.round(rms*2000));
-    if(bar) bar.style.width = pct + '%';
-    meterTimer = requestAnimationFrame(tick);
-  };
-  tick();
-}
-function stopMeter(){
-  try{ cancelAnimationFrame(meterTimer); }catch(_){}
-  meterTimer=null;
-  const bar = $('#bar'); if(bar) bar.style.width='0%';
-}
-
-/* —— 取音：麥克風（高品質→失敗退回寬鬆） —— */
-async function startMicInput(){
-  const inSel = $('#inDevice');
-  const deviceId = inSel && inSel.value ? inSel.value : undefined;
-
-  const A = {
+async function getMicStream(deviceId){
+  const cts = {
     audio:{
-      deviceId: deviceId ? {exact:deviceId} : undefined,
-      channelCount: {ideal: 2},
-      sampleRate:   {ideal: 48000},
-      echoCancellation: true,
-      noiseSuppression: true,
-      autoGainControl:  true
+      deviceId: deviceId ? {exact: deviceId} : undefined,
+      channelCount:1, sampleRate:48000, sampleSize:16,
+      echoCancellation: $('#echo').checked,
+      noiseSuppression: $('#ns').checked,
+      autoGainControl:  $('#agc').checked
     }
   };
-  const B = { audio:{ deviceId: deviceId ? {exact:deviceId} : undefined } };
-
-  let newStream;
-  try{
-    newStream = await navigator.mediaDevices.getUserMedia(A);
-  }catch(e1){
-    log('⚠️ 高品質取音失敗，退回寬鬆約束：'+e1);
-    newStream = await navigator.mediaDevices.getUserMedia(B);
-  }
-
-  validateAndReportStream(newStream, 'mic');
-  await setupAudioGraph(newStream);   // 傳入新串流
+  return await navigator.mediaDevices.getUserMedia(cts);
 }
 
-/* —— 取音：分頁音訊（Share Tab） —— */
-async function startTabAudioInput(){
-  const disp = await navigator.mediaDevices.getDisplayMedia({ video:true, audio:true });
-  const atrack = disp.getAudioTracks()[0];
-  if(!atrack){
-    alert('沒有取得分頁音訊。請選「分頁」並勾選「分享音訊」。');
-    throw new Error('no-tab-audio');
-  }
-  disp.getVideoTracks().forEach(t=>t.stop());
-  const newStream = new MediaStream([atrack]);
-  validateAndReportStream(newStream, 'tab');
-  await setupAudioGraph(newStream);
-}
+async function join(){
+  if (joined) return;
+  await listMics();
 
-/* —— 檢查指定 stream 與 track —— */
-function validateAndReportStream(ms, tag){
-  if(!ms || typeof ms.getAudioTracks !== 'function'){
-    throw new Error('stream 缺少 getAudioTracks');
-  }
-  const tracks = ms.getAudioTracks();
-  if(!tracks || tracks.length===0) throw new Error('MediaStream 沒有 audio track');
-  const t = tracks[0], s = t.getSettings?.() || {};
-  log(`🎙️ ${tag} 輸入裝置：${t.label||'(未知)'} | 設定：${JSON.stringify(s)}`);
-}
+  const name = $('#name').value.trim() || 'Guest';
+  ws = new WebSocket(`${TUNNEL_HOST.replace('https://','wss://')}/ws`);
+  ws.binaryType = 'arraybuffer';
 
-/* —— 建立音訊處理管線（用傳入的 srcStream；先關舊 activeStream） —— */
-async function setupAudioGraph(srcStream){
-  // 先把舊的音訊圖拆掉 & 關舊的串流
-  cleanupGraph();
+  ws.onopen = async ()=>{
+    $('#status').textContent="已連線"; $('#status').classList.add('now');
+    ws.send(JSON.stringify({name, play_self: $('#playSelf').checked}));
 
-  audioCtx = new (window.AudioContext||window.webkitAudioContext)();
-  await audioCtx.resume?.();
-
-  // 若 createMediaStreamSource 失敗則重包裝
-  let useStream = srcStream;
-  try{
-    sourceNode = audioCtx.createMediaStreamSource(useStream);
-  }catch(e1){
-    log('⚠️ createMediaStreamSource 失敗，嘗試以本 realm 重新包裝 tracks：'+e1);
-    const tracks = (srcStream && typeof srcStream.getAudioTracks==='function') ? srcStream.getAudioTracks() : [];
-    const ms2 = new MediaStream(tracks);
-    sourceNode = audioCtx.createMediaStreamSource(ms2);
-    useStream = ms2;
-    log('♻️ 已成功以本 realm 重新包裝 MediaStream');
-  }
-
-  // 設成目前「活躍」串流（之後切換時才會關它）
-  activeStream = useStream;
-
-  analyser = audioCtx.createAnalyser();
-  analyser.fftSize = 2048;
-  sourceNode.connect(analyser);
-
-  sinkNode = audioCtx.createGain();
-  sinkNode.gain.value = 0.0; // 避免回授
-  sinkNode.connect(audioCtx.destination);
-
-  const ok = await tryInstallWorklet();
-  setTimeout(()=>{
-    if(sentPkts===0){
-      log('⚠️ Worklet 似乎沒有送包，切換 ScriptProcessor 後備路線');
-      tryInstallScriptProcessor();
+    // 啟動麥克風
+    try{
+      const devId = $('#micSel').value || undefined;
+      stream = await getMicStream(devId);
+      log(`🎙️ mic 輸入裝置：${(stream.getAudioTracks()[0]?.label)||'未知'} | 設定：${JSON.stringify(stream.getAudioTracks()[0].getSettings())}`);
+    }catch(e){
+      log(`❌ 取得麥克風失敗：${e}`);
+      return;
     }
-  }, 1200);
 
-  startMeter();
-}
+    audioCtx = new (window.AudioContext||window.webkitAudioContext)({sampleRate:48000});
 
-/* —— Worklet 路線 —— */
-async function tryInstallWorklet(){
-  try{
+    // 優先 AudioWorklet，偵測 500ms 內沒送包改用 ScriptProcessor
+    let workletOk=false, fallbackTimer=null;
     const blobURL = URL.createObjectURL(new Blob([`
       class PCMWorklet extends AudioWorkletProcessor {
-        constructor(){ super(); this.dstRate=16000; }
-        process(inputs, outputs){
-          const input=inputs[0]; if(!input || input.length===0) return true;
-          const ch0 = input[0] || new Float32Array(128);
-          let mono;
-          if(input.length>=2 && input[1]){
-            const c1 = input[1]; mono = new Float32Array(ch0.length);
-            for(let i=0;i<mono.length;i++){ mono[i] = 0.5*(ch0[i] + c1[i]); }
-          }else mono = ch0;
-
-          const ratio = sampleRate / this.dstRate;
-          const outLen = Math.floor(mono.length/ratio);
-          const pcm = new Int16Array(outLen);
+        constructor(){ super(); this.srcRate=sampleRate; this.dstRate=16000; this.sent=0; }
+        process(inputs){
+          const input=inputs[0]; if(!input||!input[0]) return true;
+          const ch=input[0], ratio=this.srcRate/this.dstRate;
+          const outLen=Math.floor(ch.length/ratio);
+          const pcm=new Int16Array(outLen);
           for(let i=0;i<outLen;i++){
-            const idx=Math.floor(i*ratio); let s=mono[idx]||0;
+            const idx=Math.floor(i*ratio); let s=ch[idx];
             s=Math.max(-1,Math.min(1,s)); pcm[i]=s<0?s*0x8000:s*0x7FFF;
           }
           const pkt=320; // 20ms@16k
@@ -242,140 +119,54 @@ async function tryInstallWorklet(){
             const sl=pcm.subarray(off, off+pkt);
             if(sl.length===pkt) this.port.postMessage(sl.buffer,[sl.buffer]);
           }
-          const out = outputs[0]; if(out && out[0]) out[0].fill(0);
+          this.sent += Math.floor(outLen/320);
           return true;
         }
       }
       registerProcessor('pcm-worklet', PCMWorklet);
     `], {type:'application/javascript'}));
+    await audioCtx.audioWorklet.addModule(blobURL).catch(()=>{});
 
-    await audioCtx.audioWorklet.addModule(blobURL);
-    worklet = new AudioWorkletNode(audioCtx, 'pcm-worklet', {
-      numberOfInputs:1, numberOfOutputs:1, outputChannelCount:[1]
-    });
+    const source = audioCtx.createMediaStreamSource(stream);
+    worklet = new AudioWorkletNode(audioCtx, 'pcm-worklet');
     worklet.port.onmessage = (e)=>{
-      const muteEl = $('#mute');
-      // ★ 無 mute 元素時視為未靜音
-      if((!muteEl || !muteEl.checked) && ws && ws.readyState===1){
-        ws.send(e.data); sentPkts++;
+      txCount++;
+      if(!$('#mute').checked && ws && ws.readyState===1){
+        ws.send(e.data);
       }
     };
-    sourceNode.connect(worklet);
-    worklet.connect(sinkNode);
-    log(`✅ Worklet 已啟用（ctxRate=${audioCtx.sampleRate}Hz）`);
-    return true;
-  }catch(e){
-    log('❌ 安裝 AudioWorklet 失敗：'+e);
-    return false;
-  }
-}
-
-/* —— ScriptProcessor 後備 —— */
-function tryInstallScriptProcessor(){
-  try{
-    const ctxRate = audioCtx.sampleRate;
-    scriptProc = audioCtx.createScriptProcessor(4096, 2, 1);
-    scriptProc.onaudioprocess = (ev)=>{
-      const ib = ev.inputBuffer;
-      const ch0 = ib.getChannelData(0);
-      const ch1 = ib.numberOfChannels>1 ? ib.getChannelData(1) : null;
-      const mono = new Float32Array(ib.length);
-      for(let i=0;i<mono.length;i++){
-        const a = ch0[i]||0, b = ch1?ch1[i]:0;
-        mono[i] = ch1 ? 0.5*(a+b) : a;
-      }
-      const ratio = ctxRate/16000;
-      const outLen= Math.floor(mono.length/ratio);
-      const pcm   = new Int16Array(outLen);
-      for(let i=0;i<outLen;i++){
-        const idx=Math.floor(i*ratio); let s=mono[idx]||0;
-        s=Math.max(-1,Math.min(1,s)); pcm[i]=s<0?s*0x8000:s*0x7FFF;
-      }
-      const pkt=320;
-      for(let off=0; off<pcm.length; off+=pkt){
-        const sl=pcm.subarray(off, off+pkt);
-        const muteEl = $('#mute');
-        if(sl.length===pkt && (!muteEl || !muteEl.checked) && ws && ws.readyState===1){
-          ws.send(sl.buffer); sentPkts++;
-        }
-      }
-    };
-    sourceNode.connect(scriptProc);
-    scriptProc.connect(sinkNode);
-    log(`✅ ScriptProcessor 已啟用（ctxRate=${ctxRate}Hz）`);
-  }catch(e){
-    log('❌ 安裝 ScriptProcessor 失敗：'+e);
-  }
-}
-
-/* —— 清理音訊圖（只關舊 activeStream） —— */
-function cleanupGraph(){
-  try{ worklet && worklet.disconnect(); }catch(_){}
-  try{ scriptProc && scriptProc.disconnect(); }catch(_){}
-  try{ sinkNode && sinkNode.disconnect(); }catch(_){}
-  try{ sourceNode && sourceNode.disconnect(); }catch(_){}
-  try{
-    if(activeStream){
-      activeStream.getTracks?.().forEach(t=>t.stop());
-    }
-  }catch(_){}
-  try{ audioCtx && audioCtx.close(); }catch(_){}
-  stopMeter();
-  worklet=scriptProc=sinkNode=sourceNode=analyser=null;
-  audioCtx=null; activeStream=null;
-}
-
-/* —— 播放輸出裝置（AirPods Stereo） —— */
-async function setOutputSink(){
-  const outSel = $('#outDevice');
-  const player = $('#player');
-  if(!outSel || !player) return;
-  if(player.sinkId !== undefined && outSel.value){
-    try{ await player.setSinkId(outSel.value); }
-    catch(e){ log('⚠️ 設定輸出裝置失敗：'+e); }
-  }
-}
-
-/* —— 連線/事件 —— */
-async function join(){
-  if (joined) return;
-  const nameEl = $('#name'); const statusEl = $('#status');
-  const playSelfEl = $('#playSelf');
-  const modeEl = document.querySelector('input[name="mode"]:checked');
-  if(!modeEl) { log('❌ 找不到輸入模式按鈕'); return; }
-
-  const wsUrl = `wss://${TUNNEL_HOST}/ws`;
-  ws = new WebSocket(wsUrl);
-  ws.binaryType = 'arraybuffer';
-
-  ws.onopen = async ()=>{
-    if(statusEl){ statusEl.textContent="已連線"; statusEl.classList.add('now'); }
-    // ★ 若沒有 playSelf 元素，預設 true
-    ws.send(JSON.stringify({name: (nameEl?.value?.trim()||'Guest'), play_self: (playSelfEl ? !!playSelfEl.checked : true)}));
-
     try{
-      if(modeEl.value==='tab') await startTabAudioInput();
-      else await startMicInput();
+      source.connect(worklet);
+      workletOk = true;
+      log(`✅ Worklet 已啟用（ctxRate=${audioCtx.sampleRate}Hz）`);
+      fallbackTimer = setTimeout(()=>{
+        if(txCount===0){
+          log("⚠️ Worklet 似乎沒有送包，切換 ScriptProcessor 後備路線");
+          try{ worklet.disconnect(); }catch(_){}
+          useScriptProcessor(source);
+        }
+      }, 500);
     }catch(e){
-      log('❌ 無法啟動音源：' + e);
-      return;
+      log(`⚠️ createMediaStreamSource/Worklet 失敗：${e}`);
+      useScriptProcessor(source);
     }
 
-    await setOutputSink();
+    // 每秒顯示上行速率
+    txTimer = setInterval(()=>{
+      $('#tx').textContent = `TX: ${txCount* (1000/20) / (1000/20)} pkt/s`.replace(/\.\d+.*/,''); // 近似
+      txCount = 0;
+    }, 1000);
 
-    joined = true;
-    const joinBtn=$('#join'), leaveBtn=$('#leave');
-    if(joinBtn) joinBtn.disabled = true;
-    if(leaveBtn) leaveBtn.disabled = false;
-
+    joined = true; $('#join').disabled=true; $('#leave').disabled=false;
     pingTimer = setInterval(()=>{ try{ ws.send(JSON.stringify({type:"ping"})); }catch(_){ } }, 20000);
-    startTXCounter();
-
-    enumerateDevices().catch(()=>{});
   };
 
   ws.onmessage = (ev)=>{
-    if(ev.data instanceof ArrayBuffer){ queuePlay(ev.data); return; }
+    if(ev.data instanceof ArrayBuffer){
+      playQueue.push(ev.data);
+      if(!playing) playNext();
+      return;
+    }
     try{
       const o=JSON.parse(ev.data);
       if(o.type==="join")   log(`🔵 ${o.name} 加入，人數 ${o.count}`);
@@ -384,74 +175,78 @@ async function join(){
       if(o.type==="partial")log(`📝 ${o.from}（${o.dir}）\n${o.text}`);
       if(o.type==="simul")  log(`🎧 ${o.from}（${o.dir} 邊播）\n新增：${o.src_add}\n翻譯：${o.mt_add}`);
       if(o.type==="final")  log(`✅ ${o.from}（${o.dir} 完整）\n原文：${o.text}\n翻譯：${o.mt}`);
-      if(o.type==="stat")   log(`📶 ${o.from} 上行: ${o.rx_frames} frames`);
+      if(o.type==="stat")   {/* 顯示收包統計可加在這裡 */}
       if(o.type==="error")  log(`❌ ${o.msg}`);
     }catch(_){}
   };
 
   ws.onclose = ()=>{
     log("連線關閉");
-    if(statusEl){ statusEl.textContent="未連線"; statusEl.classList.remove('now'); }
-    const joinBtn=$('#join'), leaveBtn=$('#leave');
-    if(joinBtn) joinBtn.disabled=false;
-    if(leaveBtn) leaveBtn.disabled=true;
-    cleanup(); joined=false;
+    $('#status').textContent="未連線"; $('#status').classList.remove('now');
+    $('#join').disabled=false; $('#leave').disabled=true;
+    cleanupAudio(); joined=false;
   };
 }
 
-function cleanup(){
-  cleanupGraph();
+function useScriptProcessor(source){
+  const sp = audioCtx.createScriptProcessor(2048, 1, 1);
+  sp.onaudioprocess = (e)=>{
+    const ch = e.inputBuffer.getChannelData(0);
+    // 48k -> 16k
+    const ratio = 3; // 48000/16000
+    const outLen = Math.floor(ch.length/ratio);
+    const pcm = new Int16Array(outLen);
+    for(let i=0;i<outLen;i++){
+      let s = ch[i*ratio];
+      if(s>1) s=1; if(s<-1) s=-1;
+      pcm[i] = s<0 ? s*0x8000 : s*0x7FFF;
+    }
+    const pkt=320;
+    for(let off=0; off<pcm.length; off+=pkt){
+      const sl=pcm.subarray(off, off+pkt);
+      if(sl.length===pkt){
+        txCount++;
+        if(!$('#mute').checked && ws && ws.readyState===1){
+          ws.send(sl.buffer);
+        }
+      }
+    }
+  };
+  try{ source.connect(sp); sp.connect(audioCtx.destination); }catch(_){}
+  log(`✅ ScriptProcessor 已啟用（ctxRate=${audioCtx.sampleRate}Hz）`);
+}
+
+function cleanupAudio(){
+  try{ worklet && worklet.disconnect(); }catch(_){}
+  try{ stream && stream.getTracks().forEach(t=>t.stop()); }catch(_){}
+  try{ audioCtx && audioCtx.close(); }catch(_){}
   try{ clearInterval(pingTimer); }catch(_){}
-  stopTXCounter();
-  pingTimer=null;
+  try{ clearInterval(txTimer); }catch(_){}
+  worklet=null; audioCtx=null; stream=null; pingTimer=null; txTimer=null; txCount=0;
 }
 
 function leave(){
   if(ws){ try{ ws.close(); }catch(_){} }
-  cleanup();
-  const joinBtn=$('#join'), leaveBtn=$('#leave');
-  if(joinBtn) joinBtn.disabled=false;
-  if(leaveBtn) leaveBtn.disabled=true;
-  joined=false;
+  cleanupAudio();
+  $('#join').disabled=false; $('#leave').disabled=true; joined=false;
 }
 
-/* —— 播放佇列（綁定 setSinkId） —— */
-async function queuePlay(arrayBuf){
-  const blob = new Blob([arrayBuf], {type:'audio/wav'});
-  const url  = URL.createObjectURL(blob);
-  playQueue.push(url);
-  if(!playing) playNext();
-}
 async function playNext(){
   if(playQueue.length===0){ playing=false; return; }
   playing=true;
-  const url = playQueue.shift();
-  const player = $('#player');
-  if(!player){ playing=false; return; }
-  await setOutputSink();
-  player.src = url;
-  player.onended = ()=>{ URL.revokeObjectURL(url); playNext(); };
-  player.play().catch(e=>{ log('⚠️ 自動播放被阻擋，請點一下頁面：'+e); });
+  const buf=playQueue.shift();
+  const blob=new Blob([buf],{type:'audio/mpeg'});  // ★ 改成 MP3
+  const url=URL.createObjectURL(blob);
+  const a=new Audio(url);
+  a.onended=()=>{ URL.revokeObjectURL(url); playNext(); };
+  a.play().catch(()=>{ /* 某些瀏覽器需互動授權才自動播放 */ });
 }
 
-/* DOM Ready 後綁事件 */
-window.addEventListener('DOMContentLoaded', ()=>{
-  const joinBtn=$('#join'), leaveBtn=$('#leave'), refreshBtn=$('#refresh');
-  const muteEl=$('#mute'), playSelfEl=$('#playSelf'), outSel=$('#outDevice');
-
-  if(joinBtn) joinBtn.onclick = join;
-  if(leaveBtn) leaveBtn.onclick = leave;
-  if(refreshBtn) refreshBtn.onclick = async ()=>{
-    try{ await navigator.mediaDevices.getUserMedia({audio:true}); }catch(_){}
-    await enumerateDevices();
-  };
-  if(muteEl) muteEl.onchange = ()=>{ if(ws && ws.readyState===1) ws.send(JSON.stringify({type:'mute', value:!!muteEl.checked})); };
-  if(playSelfEl) playSelfEl.onchange = ()=>{ if(ws && ws.readyState===1) ws.send(JSON.stringify({type:'play_self', value:!!playSelfEl.checked})); };
-  if(outSel) outSel.onchange = ()=> setOutputSink();
-
-  enumerateDevices().catch(()=>{});
-  navigator.mediaDevices.addEventListener?.('devicechange', ()=> enumerateDevices().catch(()=>{}));
-});
+$('#join').onclick = join;
+$('#leave').onclick = leave;
+$('#mute').onchange = ()=>{ if(ws && ws.readyState===1) ws.send(JSON.stringify({type:'mute', value:$('#mute').checked})); };
+$('#playSelf').onchange = ()=>{ if(ws && ws.readyState===1) ws.send(JSON.stringify({type:'play_self', value:$('#playSelf').checked})); };
+navigator.mediaDevices.addEventListener('devicechange', listMics);
 </script>
 </body>
 </html>
