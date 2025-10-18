@@ -44,15 +44,15 @@
 
   <div class="logs" id="logs"></div>
 
-  <!-- 單一隱藏播放器，集中控制 setSinkId -->
   <audio id="player" hidden></audio>
 
 <script>
-/* 換成你當前 cloudflared 的主機名（不要含 https://） */
+/* 換成你當前 cloudflared 主機名（不要含 https://） */
 const TUNNEL_HOST = "room-rug-submitted-invitations.trycloudflare.com";
 
-let ws=null, audioCtx=null, stream=null, sourceNode=null, analyser=null, meterTimer=null;
+let ws=null, audioCtx=null, sourceNode=null, analyser=null, meterTimer=null;
 let sinkNode=null, worklet=null, scriptProc=null;
+let activeStream=null;   // ★ 目前音訊圖使用中的串流（只關舊的）
 let pingTimer=null, txTimer=null, playQueue=[], playing=false, joined=false;
 let sentPkts = 0, lastPkts = 0;
 
@@ -130,15 +130,16 @@ async function startMicInput(){
   };
   const B = { audio:{ deviceId: deviceId ? {exact:deviceId} : undefined } };
 
+  let newStream;
   try{
-    stream = await navigator.mediaDevices.getUserMedia(A);
+    newStream = await navigator.mediaDevices.getUserMedia(A);
   }catch(e1){
     log('⚠️ 高品質取音失敗，退回寬鬆約束：'+e1);
-    stream = await navigator.mediaDevices.getUserMedia(B);
+    newStream = await navigator.mediaDevices.getUserMedia(B);
   }
 
-  validateAndReportStream('mic');
-  await setupAudioGraph();
+  validateAndReportStream(newStream, 'mic');
+  await setupAudioGraph(newStream);   // ★ 傳入新串流
 }
 
 /* —— 取音：分頁音訊（Share Tab） —— */
@@ -150,52 +151,52 @@ async function startTabAudioInput(){
     throw new Error('no-tab-audio');
   }
   disp.getVideoTracks().forEach(t=>t.stop());
-  stream = new MediaStream([atrack]);
-  validateAndReportStream('tab');
-  await setupAudioGraph();
+  const newStream = new MediaStream([atrack]);
+  validateAndReportStream(newStream, 'tab');
+  await setupAudioGraph(newStream);   // ★ 傳入新串流
 }
 
-/* —— 檢查 stream 與 track，並回報參數（不再用 instanceof） —— */
-function validateAndReportStream(tag){
-  if(!stream || typeof stream.getAudioTracks !== 'function'){
+/* —— 檢查指定 stream 與 track —— */
+function validateAndReportStream(ms, tag){
+  if(!ms || typeof ms.getAudioTracks !== 'function'){
     throw new Error('stream 缺少 getAudioTracks');
   }
-  const tracks = stream.getAudioTracks();
+  const tracks = ms.getAudioTracks();
   if(!tracks || tracks.length===0) throw new Error('MediaStream 沒有 audio track');
   const t = tracks[0], s = t.getSettings?.() || {};
   log(`🎙️ ${tag} 輸入裝置：${t.label||'(未知)'} | 設定：${JSON.stringify(s)}`);
 }
 
-/* —— 建立音訊處理管線（自動偵測樣率；若失敗則重包裝 MediaStream） —— */
-async function setupAudioGraph(){
+/* —— 建立音訊處理管線（用傳入的 srcStream；先關舊 activeStream） —— */
+async function setupAudioGraph(srcStream){
+  // 先把舊的音訊圖拆掉 & 關舊的串流
   cleanupGraph();
 
   audioCtx = new (window.AudioContext||window.webkitAudioContext)();
   await audioCtx.resume?.();
 
-  // 有些情況 stream 不是同一 realm 的 MediaStream，先嘗試直接建立
+  // 若 createMediaStreamSource 失敗則重包裝
+  let useStream = srcStream;
   try{
-    sourceNode = audioCtx.createMediaStreamSource(stream);
+    sourceNode = audioCtx.createMediaStreamSource(useStream);
   }catch(e1){
     log('⚠️ createMediaStreamSource 失敗，嘗試以本 realm 重新包裝 tracks：'+e1);
-    try{
-      const tracks = (stream && typeof stream.getAudioTracks==='function') ? stream.getAudioTracks() : [];
-      const ms2 = new MediaStream(tracks);
-      sourceNode = audioCtx.createMediaStreamSource(ms2);
-      stream = ms2; // 用重包裝後的流
-      log('♻️ 已成功以本 realm 重新包裝 MediaStream');
-    }catch(e2){
-      log('❌ 重新包裝仍失敗：'+e2);
-      throw e2;
-    }
+    const tracks = (srcStream && typeof srcStream.getAudioTracks==='function') ? srcStream.getAudioTracks() : [];
+    const ms2 = new MediaStream(tracks);
+    sourceNode = audioCtx.createMediaStreamSource(ms2);
+    useStream = ms2;
+    log('♻️ 已成功以本 realm 重新包裝 MediaStream');
   }
+
+  // ★ 設成目前「活躍」串流（之後切換時才會關它）
+  activeStream = useStream;
 
   analyser = audioCtx.createAnalyser();
   analyser.fftSize = 2048;
   sourceNode.connect(analyser);
 
   sinkNode = audioCtx.createGain();
-  sinkNode.gain.value = 0.0;
+  sinkNode.gain.value = 0.0; // 避免回授
   sinkNode.connect(audioCtx.destination);
 
   const ok = await tryInstallWorklet();
@@ -301,17 +302,21 @@ function tryInstallScriptProcessor(){
   }
 }
 
-/* —— 清理音訊圖 —— */
+/* —— 清理音訊圖（只關舊 activeStream） —— */
 function cleanupGraph(){
   try{ worklet && worklet.disconnect(); }catch(_){}
   try{ scriptProc && scriptProc.disconnect(); }catch(_){}
   try{ sinkNode && sinkNode.disconnect(); }catch(_){}
   try{ sourceNode && sourceNode.disconnect(); }catch(_){}
-  try{ stream && stream.getTracks().forEach(t=>t.stop()); }catch(_){}
+  try{
+    if(activeStream){
+      activeStream.getTracks?.().forEach(t=>t.stop());
+    }
+  }catch(_){}
   try{ audioCtx && audioCtx.close(); }catch(_){}
   stopMeter();
   worklet=scriptProc=sinkNode=sourceNode=analyser=null;
-  audioCtx=null; stream=null;
+  audioCtx=null; activeStream=null;
 }
 
 /* —— 播放輸出裝置（AirPods Stereo） —— */
@@ -368,7 +373,7 @@ async function join(){
     try{
       const o=JSON.parse(ev.data);
       if(o.type==="join")   log(`🔵 ${o.name} 加入，人數 ${o.count}`);
-      if(o.type==="leave")  log(`⚪ ${o.name} 離開，人數 ${o.count}`);
+      if(o.type==="leave")  log(`⚪ ${o.name} 离开，人數 ${o.count}`);
       if(o.type==="mute")   log(`🔇 ${o.name} ${o.muted?"已靜音":"取消靜音"}`);
       if(o.type==="partial")log(`📝 ${o.from}（${o.dir}）\n${o.text}`);
       if(o.type==="simul")  log(`🎧 ${o.from}（${o.dir} 邊播）\n新增：${o.src_add}\n翻譯：${o.mt_add}`);
@@ -423,7 +428,7 @@ async function playNext(){
   player.play().catch(e=>{ log('⚠️ 自動播放被阻擋，請點一下頁面：'+e); });
 }
 
-/* 只在 DOM 真的準備好之後才綁事件 */
+/* DOM Ready 後綁事件 */
 window.addEventListener('DOMContentLoaded', ()=>{
   const joinBtn=$('#join'), leaveBtn=$('#leave'), refreshBtn=$('#refresh');
   const muteEl=$('#mute'), playSelfEl=$('#playSelf'), outSel=$('#outDevice');
@@ -438,7 +443,6 @@ window.addEventListener('DOMContentLoaded', ()=>{
   if(playSelfEl) playSelfEl.onchange = ()=>{ if(ws && ws.readyState===1) ws.send(JSON.stringify({type:'play_self', value:!!playSelfEl.checked})); };
   if(outSel) outSel.onchange = ()=> setOutputSink();
 
-  // 初始列裝置；插拔耳機時自動刷新
   enumerateDevices().catch(()=>{});
   navigator.mediaDevices.addEventListener?.('devicechange', ()=> enumerateDevices().catch(()=>{}));
 });
