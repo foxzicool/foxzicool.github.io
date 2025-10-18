@@ -37,6 +37,11 @@
   </div>
 
   <div class="row">
+    <label><input id="mute" type="checkbox"> 對自己禁音（不送出麥克風）</label>
+    <label><input id="playSelf" type="checkbox" checked> 播放自己的譯音</label>
+  </div>
+
+  <div class="row">
     <strong>播放輸出裝置：</strong>
     <select id="outDevice"></select>
     <small>(選「AirPods Stereo」避免被切去喇叭)</small>
@@ -52,7 +57,7 @@ const TUNNEL_HOST = "room-rug-submitted-invitations.trycloudflare.com";
 
 let ws=null, audioCtx=null, sourceNode=null, analyser=null, meterTimer=null;
 let sinkNode=null, worklet=null, scriptProc=null;
-let activeStream=null;   // ★ 目前音訊圖使用中的串流（只關舊的）
+let activeStream=null;   // 目前音訊圖使用中的串流（只關舊的）
 let pingTimer=null, txTimer=null, playQueue=[], playing=false, joined=false;
 let sentPkts = 0, lastPkts = 0;
 
@@ -123,9 +128,9 @@ async function startMicInput(){
       deviceId: deviceId ? {exact:deviceId} : undefined,
       channelCount: {ideal: 2},
       sampleRate:   {ideal: 48000},
-      echoCancellation: $('#echo')?.checked ?? true,
-      noiseSuppression: $('#ns')?.checked ?? true,
-      autoGainControl:  $('#agc')?.checked ?? true
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl:  true
     }
   };
   const B = { audio:{ deviceId: deviceId ? {exact:deviceId} : undefined } };
@@ -139,7 +144,7 @@ async function startMicInput(){
   }
 
   validateAndReportStream(newStream, 'mic');
-  await setupAudioGraph(newStream);   // ★ 傳入新串流
+  await setupAudioGraph(newStream);   // 傳入新串流
 }
 
 /* —— 取音：分頁音訊（Share Tab） —— */
@@ -153,7 +158,7 @@ async function startTabAudioInput(){
   disp.getVideoTracks().forEach(t=>t.stop());
   const newStream = new MediaStream([atrack]);
   validateAndReportStream(newStream, 'tab');
-  await setupAudioGraph(newStream);   // ★ 傳入新串流
+  await setupAudioGraph(newStream);
 }
 
 /* —— 檢查指定 stream 與 track —— */
@@ -188,7 +193,7 @@ async function setupAudioGraph(srcStream){
     log('♻️ 已成功以本 realm 重新包裝 MediaStream');
   }
 
-  // ★ 設成目前「活躍」串流（之後切換時才會關它）
+  // 設成目前「活躍」串流（之後切換時才會關它）
   activeStream = useStream;
 
   analyser = audioCtx.createAnalyser();
@@ -250,7 +255,8 @@ async function tryInstallWorklet(){
     });
     worklet.port.onmessage = (e)=>{
       const muteEl = $('#mute');
-      if(muteEl && !muteEl.checked && ws && ws.readyState===1){
+      // ★ 無 mute 元素時視為未靜音
+      if((!muteEl || !muteEl.checked) && ws && ws.readyState===1){
         ws.send(e.data); sentPkts++;
       }
     };
@@ -289,7 +295,7 @@ function tryInstallScriptProcessor(){
       for(let off=0; off<pcm.length; off+=pkt){
         const sl=pcm.subarray(off, off+pkt);
         const muteEl = $('#mute');
-        if(sl.length===pkt && muteEl && !muteEl.checked && ws && ws.readyState===1){
+        if(sl.length===pkt && (!muteEl || !muteEl.checked) && ws && ws.readyState===1){
           ws.send(sl.buffer); sentPkts++;
         }
       }
@@ -339,13 +345,13 @@ async function join(){
   if(!modeEl) { log('❌ 找不到輸入模式按鈕'); return; }
 
   const wsUrl = `wss://${TUNNEL_HOST}/ws`;
-  console.log("WS URL =", wsUrl);
   ws = new WebSocket(wsUrl);
   ws.binaryType = 'arraybuffer';
 
   ws.onopen = async ()=>{
     if(statusEl){ statusEl.textContent="已連線"; statusEl.classList.add('now'); }
-    ws.send(JSON.stringify({name: (nameEl?.value?.trim()||'Guest'), play_self: !!(playSelfEl?.checked)}));
+    // ★ 若沒有 playSelf 元素，預設 true
+    ws.send(JSON.stringify({name: (nameEl?.value?.trim()||'Guest'), play_self: (playSelfEl ? !!playSelfEl.checked : true)}));
 
     try{
       if(modeEl.value==='tab') await startTabAudioInput();
@@ -373,7 +379,7 @@ async function join(){
     try{
       const o=JSON.parse(ev.data);
       if(o.type==="join")   log(`🔵 ${o.name} 加入，人數 ${o.count}`);
-      if(o.type==="leave")  log(`⚪ ${o.name} 离开，人數 ${o.count}`);
+      if(o.type==="leave")  log(`⚪ ${o.name} 離開，人數 ${o.count}`);
       if(o.type==="mute")   log(`🔇 ${o.name} ${o.muted?"已靜音":"取消靜音"}`);
       if(o.type==="partial")log(`📝 ${o.from}（${o.dir}）\n${o.text}`);
       if(o.type==="simul")  log(`🎧 ${o.from}（${o.dir} 邊播）\n新增：${o.src_add}\n翻譯：${o.mt_add}`);
