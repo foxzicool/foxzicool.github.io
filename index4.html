@@ -1,8 +1,8 @@
 <!doctype html>
 <html lang="zh-Hant">
-<meta charset="utf-8" />
+<meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>中↔韓 同聲傳譯（本地即時原音＋伺服器譯音）</title>
+<title>中↔韓 同聲傳譯（本地即時原音＋伺服器譯音｜測試回聽版）</title>
 <style>
   body{font-family:system-ui,-apple-system,"Noto Sans TC","Microsoft JhengHei",Arial;padding:20px;max-width:980px;margin:auto}
   .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
@@ -10,17 +10,22 @@
   button{cursor:pointer}
   button[disabled]{opacity:.5;cursor:not-allowed}
   .pill{padding:4px 10px;border-radius:999px;background:#efefef;font-size:12px}
-  .logs{margin-top:12px;padding:10px;border:1px solid #eee;border-radius:10px;background:#fafafa;height:380px;overflow:auto;font-size:14px;white-space:pre-wrap}
+  .logs{margin-top:12px;padding:10px;border:1px solid #eee;border-radius:10px;background:#fafafa;height:360px;overflow:auto;font-size:14px;white-space:pre-wrap}
   .now{color:#1b7fbd}
   .stat{font-family:monospace}
   .hint{color:#666;font-size:13px}
+  .meter{width:160px;height:10px;background:#eee;border-radius:6px;overflow:hidden;position:relative}
+  .bar{height:100%;width:0%;background:#1b7fbd;transition:width .08s linear}
+  .gate{padding:2px 6px;border-radius:6px;background:#ddd}
+  .gate.open{background:#16a34a;color:#fff}
+  .gate.closed{background:#ef4444;color:#fff}
 </style>
 <body>
-  <h2>中↔韓 同聲傳譯（本地即時原音＋伺服器譯音）</h2>
+  <h2>中↔韓 同聲傳譯（本地即時原音＋伺服器譯音｜測試回聽版）</h2>
 
   <div class="row">
     <label>名稱</label>
-    <input id="name" type="text" placeholder="你的名字" value="Public" />
+    <input id="name" type="text" placeholder="你的名字" value="Public"/>
     <label>來源語言</label>
     <select id="srcLang">
       <option value="zh" selected>中文</option>
@@ -35,8 +40,12 @@
     <label><input id="mute" type="checkbox"> 不送出麥克風</label>
     <label><input id="echo" type="checkbox" checked> 回聲抑制</label>
     <label><input id="ns"   type="checkbox" checked> 降噪</label>
-    <label><input id="agc"  type="checkbox"> 自動增益</label>
+    <label><input id="agc"  type="checkbox" checked> 自動增益</label>
+    <label><input id="forceGate" type="checkbox"> 強制開閘</label>
     <span class="stat" id="tx">TX: 0 pkt/s</span>
+    <span class="stat" id="rmsTxt">RMS: 0.000</span>
+    <span class="gate closed" id="gateSta">GATE</span>
+    <div class="meter"><div class="bar" id="rmsBar"></div></div>
   </div>
 
   <div class="row" style="margin-top:10px">
@@ -50,36 +59,35 @@
   <div class="logs" id="logs"></div>
 
 <script>
-/*
- 前端主要改動說明：
- - 本地監聽不直接用原始 stream，先經過 HP (100Hz) + LP (8000Hz) + Compressor，再送到 mediaStreamDestination 供 <audio> loopback 使用。
- - 本地 loopback 會根據 gate（由上傳的 rms 決定）自動 mute/unmute，避免打字聲被回放。
- - 上傳採 48k -> 16k 線性重取樣，並使用 gate 閾值 (GATE_OPEN_RMS / CLOSE) 來避免鍵盤/環境音上傳。
- 可調參數：
-  - GATE_OPEN_RMS (預設 0.006) -> 調大可減少把較弱聲音（例如鍵盤）當成語音上傳
-  - GATE_CLOSE_RMS (預設 0.004)
-  - HP_FREQ (預設 120) / LP_FREQ (預設 8000) / COMPRESSOR settings
-*/
-
 const TUNNEL_HOST = "https://easier-downtown-essex-president.trycloudflare.com";
 
 let ws=null, audioCtx=null, workletNode=null, spNode=null, stream=null, pingTimer=null, txTimer=null;
 let playQueue=[], playing=false, joined=false, txPkts=0;
 let micSource=null, loopbackEl=null;
+let nullSink=null; // 把處理節點串到 0 增益，確保被「拉動」
 
 let devicesCache=[];
 let currentMicId = "";
 let currentOutId = "";
 
-// GATE / filter params (可微調)
-const GATE_OPEN_RMS  = 0.006;  // 增大: 更難開門 -> 才上傳/才監聽（減少鍵盤）
-const GATE_CLOSE_RMS = 0.004;
-const GATE_HANG_FR   = 3;      // 門關閉前保留幾個 frame
-const HP_FREQ = 120;           // high-pass cutoff (Hz)
-const LP_FREQ = 8000;          // low-pass cutoff (Hz)
+// Gate/濾波參數（降門檻，較容易開門）
+const GATE_OPEN_RMS  = 0.003;
+const GATE_CLOSE_RMS = 0.002;
+const GATE_HANG_FR   = 3;
+const HP_FREQ = 120;
+const LP_FREQ = 8000;
 
 const $  = (s)=>document.querySelector(s);
 const log= (s)=>{ const el=$('#logs'); el.textContent+=s+"\n"; el.scrollTop=el.scrollHeight; };
+
+function setGateUI(open, rms){
+  $('#rmsTxt').textContent = `RMS: ${rms.toFixed(3)}`;
+  $('#rmsBar').style.width = `${Math.min(100, rms*4000)}%`;
+  const el = $('#gateSta');
+  el.textContent = open ? 'GATE 開' : 'GATE 關';
+  el.classList.toggle('open',   open);
+  el.classList.toggle('closed', !open);
+}
 
 async function refreshDevices(){
   devicesCache = await navigator.mediaDevices.enumerateDevices();
@@ -89,14 +97,16 @@ async function refreshDevices(){
   const micSel=$('#micSel'); micSel.innerHTML="";
   mics.forEach(d=>{
     const o=document.createElement('option');
-    o.value=d.deviceId; o.textContent=d.label || `麥克風(${d.deviceId.slice(0,6)}…)`;
+    o.value=d.deviceId;
+    o.textContent = d.label || `麥克風(${d.deviceId.slice(0,6)}…)`;
     micSel.appendChild(o);
   });
 
   const outSel=$('#outSel'); outSel.innerHTML="";
   outs.forEach(d=>{
     const o=document.createElement('option');
-    o.value=d.deviceId; o.textContent=d.label || `輸出(${d.deviceId.slice(0,6)}…)`;
+    o.value=d.deviceId;
+    o.textContent = d.label || `輸出(${d.deviceId.slice(0,6)}…)`;
     outSel.appendChild(o);
   });
 
@@ -109,8 +119,8 @@ function pickOutputForMic(micId){
   const outs = devicesCache.filter(d=>d.kind==="audiooutput");
   if (!mic || outs.length===0) return;
   let cand = outs.filter(o=>o.groupId && mic.groupId && o.groupId===mic.groupId);
-  const prefer = (d)=>/headphone|headset|airpods|buds|耳機|藍牙/i.test(d.label||"");
-  cand = cand.sort((a,b)=> (prefer(b.label||"")?1:0) - (prefer(a.label||"")?1:0));
+  const prefer = (label)=>/headphone|headset|airpods|buds|耳機|藍牙/i.test(label||"");
+  cand = cand.sort((a,b)=> (prefer(b.label)?1:0) - (prefer(a.label)?1:0));
   const pick = cand[0] || outs[0];
   currentOutId = pick.deviceId;
   $('#outSel').value = currentOutId;
@@ -138,40 +148,37 @@ async function buildAudioPipeline(deviceId){
   // 清舊
   try{ workletNode && workletNode.disconnect(); }catch(_){}
   try{ spNode && spNode.disconnect(); }catch(_){}
+  try{ nullSink && nullSink.disconnect(); }catch(_){}
   stopStream(stream);
   try{ audioCtx && await audioCtx.close(); }catch(_){}
 
-  // 新建
   audioCtx = new (window.AudioContext||window.webkitAudioContext)({sampleRate:48000});
   await audioCtx.resume().catch(()=>{});
 
+  // 0 增益匯流排，確保上傳節點被「拉動」
+  nullSink = audioCtx.createGain();
+  nullSink.gain.value = 0;
+  nullSink.connect(audioCtx.destination);
+
   stream = await getMicStream(deviceId);
   const info = stream.getAudioTracks()[0]?.getSettings?.() || {};
-  currentMicId = deviceId || (stream.getAudioTracks()[0]?.getCapabilities?.().deviceId) || "";
+  currentMicId = deviceId || "";
   log(`🎙️ mic：${(stream.getAudioTracks()[0]?.label)||'未知'} | 設定：${JSON.stringify(info)}`);
 
-  if (!currentOutId) { await refreshDevices(); pickOutputForMic(currentMicId || $('#micSel').value); }
+  if (!currentOutId) { await refreshDevices(); pickOutputForMic($('#micSel').value || currentMicId); }
 
   micSource = audioCtx.createMediaStreamSource(stream);
 
-  // 建立處理用濾波 + 壓縮器 -> 產生 processed stream 給 loopback
-  try {
+  // 本地監聽（高通+低通+壓縮）→ MediaStreamDestination → <audio> loopback
+  try{
     const hp = audioCtx.createBiquadFilter(); hp.type='highpass'; hp.frequency.value = HP_FREQ;
-    const lp = audioCtx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value = LP_FREQ;
+    const lp = audioCtx.createBiquadFilter(); lp.type='lowpass';  lp.frequency.value = LP_FREQ;
     const comp = audioCtx.createDynamicsCompressor();
-    comp.threshold.value = -40;
-    comp.knee.value = 5;
-    comp.ratio.value = 6;
-    comp.attack.value = 0.01;
-    comp.release.value = 0.25;
+    comp.threshold.value = -40; comp.knee.value = 5; comp.ratio.value = 6; comp.attack.value = 0.01; comp.release.value = 0.25;
 
     const dest = audioCtx.createMediaStreamDestination();
-    micSource.connect(hp);
-    hp.connect(lp);
-    lp.connect(comp);
-    comp.connect(dest);
+    micSource.connect(hp); hp.connect(lp); lp.connect(comp); comp.connect(dest);
 
-    // 用處理過的 stream 當本地 loopback，並嘗試 setSinkId 到你選的輸出裝置
     if (loopbackEl){ try{ loopbackEl.pause(); }catch(_){ } }
     loopbackEl = new Audio();
     loopbackEl.autoplay = true;
@@ -179,13 +186,12 @@ async function buildAudioPipeline(deviceId){
     if (typeof loopbackEl.setSinkId === 'function' && currentOutId) {
       try { await loopbackEl.setSinkId(currentOutId); } catch(e){ log(`⚠️ 迴放輸出設定失敗：${e}`); }
     }
-    // 先 muted，等偵測到說話才 unmute（減少鍵盤回音）
+    // 先靜音，等 gate 開才打開
     loopbackEl.muted = true;
     await loopbackEl.play().catch(()=>{});
-  } catch(e){
+  }catch(e){
     log(`⚠️ 本地處理/監聽建立失敗：${e}`);
-    // fallback: 直接 loop 原始 stream（仍嘗試 setSinkId）
-    try {
+    try{
       if (loopbackEl){ try{ loopbackEl.pause(); }catch(_){ } }
       loopbackEl = new Audio();
       loopbackEl.autoplay = true;
@@ -195,11 +201,48 @@ async function buildAudioPipeline(deviceId){
       }
       loopbackEl.muted = false;
       await loopbackEl.play().catch(()=>{});
-    } catch(_) {}
+    }catch(_){}
   }
 
-  // 上傳 node（48k -> 16k）: 用 worklet 或 fallback ScriptProcessor
+  // 上傳節點：48k -> 16k，並做 gate
   try{
+    let lastRmsUpdate = 0;
+
+    const postFrame = (int16buf)=>{
+      // RMS
+      let ss=0; for(let n=0;n<int16buf.length;n++){ const v=int16buf[n]/32768; ss+=v*v; }
+      const rms = Math.sqrt(ss/int16buf.length);
+
+      // Gate
+      let open = gateState.open;
+      if ($('#forceGate').checked) {
+        open = true;
+      } else {
+        if (!open && rms >= GATE_OPEN_RMS) { open = true; gateState.hang = GATE_HANG_FR; }
+        if (open  && rms <  GATE_CLOSE_RMS) { gateState.hang = Math.max(0, gateState.hang-1); if (gateState.hang===0) open=false; }
+      }
+      gateState.open = open;
+
+      // UI 200ms 更新一次
+      const t = performance.now();
+      if (t - lastRmsUpdate > 200) {
+        setGateUI(open, rms);
+        lastRmsUpdate = t;
+      }
+
+      // 本地監聽只在說話時打開
+      if (loopbackEl) { loopbackEl.muted = !open; }
+
+      if (open) {
+        txPkts++;
+        if(!$('#mute').checked && ws && ws.readyState===1){
+          ws.send(int16buf.buffer);
+        }
+      }
+    };
+
+    const gateState = {open:false, hang:0};
+
     if (audioCtx.audioWorklet) {
       const blobURL = URL.createObjectURL(new Blob([`
         class ResampleWorklet extends AudioWorkletProcessor {
@@ -225,31 +268,15 @@ async function buildAudioPipeline(deviceId){
       `], {type:'application/javascript'}));
       await audioCtx.audioWorklet.addModule(blobURL);
       workletNode = new AudioWorkletNode(audioCtx, 'resample-worklet');
-      let gateOpen=false, gateHang=0;
-      workletNode.port.onmessage = (e)=>{
-        const buf = new Int16Array(e.data);
-        let ss=0; for(let n=0;n<buf.length;n++){ const v=buf[n]/32768; ss+=v*v; }
-        const rms = Math.sqrt(ss/buf.length);
-        // gate logic (上傳)
-        if (!gateOpen && rms >= GATE_OPEN_RMS) { gateOpen = true; gateHang = GATE_HANG_FR; }
-        if (gateOpen && rms < GATE_CLOSE_RMS) { gateHang = Math.max(0, gateHang-1); if (gateHang===0) gateOpen=false; }
-        // 控制本地 loopback mute/unmute（只在說話時打開監聽）
-        if (loopbackEl) {
-          try { loopbackEl.muted = !gateOpen; } catch(_) {}
-        }
-        if (gateOpen) {
-          txPkts++;
-          if(!$('#mute').checked && ws && ws.readyState===1){
-            ws.send(buf.buffer);
-          }
-        }
-      };
+      // 確保節點被拉動
+      workletNode.connect(nullSink);
+
+      workletNode.port.onmessage = (e)=>{ postFrame(new Int16Array(e.data)); };
       micSource.connect(workletNode);
       spNode=null;
       log(`✅ Worklet 已啟用（ctxRate=${audioCtx.sampleRate}Hz）`);
     } else {
       spNode = audioCtx.createScriptProcessor(2048,1,1);
-      let gateOpen=false, gateHang=0;
       spNode.onaudioprocess = (ev)=>{
         const ch=ev.inputBuffer.getChannelData(0);
         const ratio=48000/16000;
@@ -262,24 +289,12 @@ async function buildAudioPipeline(deviceId){
         }
         for(let off=0; off<pcm.length; off+=320){
           const sl=pcm.subarray(off, off+320);
-          if(sl.length===320){
-            let ss=0; for(let n=0;n<sl.length;n++){ const v=sl[n]/32768; ss+=v*v; }
-            const rms = Math.sqrt(ss/sl.length);
-            if (!gateOpen && rms >= GATE_OPEN_RMS) { gateOpen = true; gateHang = GATE_HANG_FR; }
-            if (gateOpen && rms < GATE_CLOSE_RMS)   { gateHang = Math.max(0, gateHang-1); if (gateHang===0) gateOpen=false; }
-            if (loopbackEl) {
-              try { loopbackEl.muted = !gateOpen; } catch(_) {}
-            }
-            if (gateOpen) {
-              txPkts++;
-              if(!$('#mute').checked && ws && ws.readyState===1){
-                ws.send(sl.buffer);
-              }
-            }
-          }
+          if(sl.length===320){ postFrame(sl); }
         }
       };
       micSource.connect(spNode);
+      // 確保節點被拉動
+      spNode.connect(nullSink);
       workletNode=null;
       log(`✅ ScriptProcessor 已啟用（ctxRate=${audioCtx.sampleRate}Hz）`);
     }
@@ -289,12 +304,15 @@ async function buildAudioPipeline(deviceId){
 function cleanupAll(){
   try{ workletNode && workletNode.disconnect(); }catch(_){}
   try{ spNode && spNode.disconnect(); }catch(_){}
+  try{ nullSink && nullSink.disconnect(); }catch(_){}
   stopStream(stream);
   try{ audioCtx && audioCtx.close(); }catch(_){}
   try{ clearInterval(pingTimer); }catch(_){}
   try{ clearInterval(txTimer); }catch(_){}
-  workletNode=spNode=micSource=null; audioCtx=stream=null; pingTimer=txTimer=null; txPkts=0;
+  workletNode=spNode=micSource=null; nullSink=null; audioCtx=stream=null; pingTimer=txTimer=null; txPkts=0;
   if (loopbackEl){ try{ loopbackEl.pause(); }catch(_){ } loopbackEl=null; }
+  setGateUI(false, 0);
+  $('#tx').textContent = 'TX: 0 pkt/s';
 }
 
 function leave(){
@@ -324,7 +342,6 @@ async function join(){
     $('#status').textContent="已連線"; $('#status').classList.add('now');
     ws.send(JSON.stringify({name, src_lang: srcLang}));
 
-    // 嚴格使用你選的麥克風
     await buildAudioPipeline($('#micSel').value || undefined);
 
     txTimer = setInterval(()=>{ $('#tx').textContent = `TX: ${txPkts} pkt/s`; txPkts=0; }, 1000);
@@ -334,7 +351,7 @@ async function join(){
 
   ws.onmessage = (ev)=>{
     if(ev.data instanceof ArrayBuffer){
-      log(`⤵️ 收到 audio bytes len=${ev.data.byteLength}`);
+      // 收到伺服器廣播的原音/譯音
       playQueue.push(ev.data);
       if(!playing) playNext();
       return;
@@ -346,7 +363,6 @@ async function join(){
       if(o.type==="final")   log(`✅ ${o.from}（${o.dir}）\n原文：${o.text}\n翻譯：${o.mt}`);
       if(o.type==="mute")    log(`🔇 ${o.name} ${o.muted?"已靜音":"取消靜音"}`);
       if(o.type==="error")   log(`❌ ${o.msg}`);
-      if(o.type==="debug")   log(`ℹ️ ${o.msg}`);
     }catch(_){}
   };
 
@@ -368,7 +384,6 @@ async function playNext(){
   playing=true;
   const buf=playQueue.shift();
   const mime = sniffMime(buf);
-
   const blob=new Blob([buf],{type:mime});
   const url=URL.createObjectURL(blob);
   const a=new Audio(url);
@@ -377,20 +392,19 @@ async function playNext(){
     try { await a.setSinkId(currentOutId); } catch(e){ log(`⚠️ 設定播放輸出失敗：${e}`); }
   }
   a.onended=()=>{ URL.revokeObjectURL(url); playNext(); };
-  a.play().catch(()=>{});
+  a.play().catch(()=>{ /* 需要使用者互動才可自動播放時忽略 */ });
 }
 
 $('#join').onclick = join;
 $('#leave').onclick = leave;
-$('#mute').onchange = ()=>{ /* 本地阻擋上傳，不必通知伺服器 */ };
-
+// 本地阻擋上傳，不必通知伺服器
+$('#mute').onchange = ()=>{};
 $('#micSel').onchange = async ()=>{
   currentMicId = $('#micSel').value || "";
   await refreshDevices();
   pickOutputForMic(currentMicId);
   await buildAudioPipeline(currentMicId);
 };
-
 $('#outSel').onchange = async ()=>{
   currentOutId = $('#outSel').value || "";
   if (loopbackEl && typeof loopbackEl.setSinkId==='function' && currentOutId){
@@ -410,7 +424,7 @@ navigator.mediaDevices.addEventListener('devicechange', async ()=>{
   }
 });
 
-// 首次：拿權限→列裝置
+// 先拿權限再列裝置
 (async ()=>{ try{ await navigator.mediaDevices.getUserMedia({audio:true}); }catch(_){ } await refreshDevices(); })();
 </script>
 </body>
