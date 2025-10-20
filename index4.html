@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>中↔韓 同聲傳譯（完整句｜別人的原音+譯音）</title>
+<title>中↔韓 同聲傳譯（完整句｜本地監聽自己 + 伺服器播譯音）</title>
 <style>
   body{font-family:system-ui,-apple-system,"Noto Sans TC","Microsoft JhengHei",Arial;padding:20px;max-width:900px;margin:auto}
   .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
@@ -14,9 +14,10 @@
   .now{color:#1b7fbd}
   .stat{font-family:monospace}
   .hint{color:#666;font-size:13px}
+  label.inline{display:inline-flex;align-items:center;gap:6px}
 </style>
 <body>
-  <h2>中↔韓 同聲傳譯（完整句｜別人的原音+譯音）</h2>
+  <h2>中↔韓 同聲傳譯（完整句｜本地監聽自己 + 伺服器播譯音）</h2>
 
   <div class="row">
     <label>名稱(이름)</label>
@@ -32,27 +33,34 @@
   </div>
 
   <div class="row" style="margin-top:10px">
-    <label><input id="mute" type="checkbox"> 對自己禁音（不送出麥克風）</label>
-    <label><input id="echo" type="checkbox" checked> 回聲抑制</label>
-    <label><input id="ns" type="checkbox" checked> 降噪</label>
-    <label><input id="agc" type="checkbox" checked> 自動增益</label>
+    <label class="inline"><input id="mute" type="checkbox"> 不送出麥克風</label>
+    <label class="inline"><input id="echo" type="checkbox" checked> 回聲抑制</label>
+    <label class="inline"><input id="ns" type="checkbox" checked> 降噪</label>
+    <label class="inline"><input id="agc" type="checkbox" checked> 自動增益</label>
     <span class="stat" id="tx">TX: 0 pkt/s</span>
   </div>
 
   <div class="row" style="margin-top:10px">
     <label for="micSel">輸入裝置(마이크)</label>
     <select id="micSel"></select>
-    <span class="hint">建議用耳機，避免回授造成誤觸發。</span>
+    <label class="inline">
+      <input id="monitor" type="checkbox" checked>
+      本地回聽自己
+    </label>
+    <label class="inline">音量
+      <input id="monVol" type="range" min="0" max="1" step="0.01" value="0.9">
+    </label>
+    <span class="hint">建議戴耳機，避免回授。</span>
   </div>
 
   <div class="logs" id="logs"></div>
 
 <script>
-/** 換成你本次 cloudflared 顯示的 HTTPS 網址 **/
 const TUNNEL_HOST = "https://twenty-chose-src-keeps.trycloudflare.com";
 
-let ws=null, audioCtx=null, stream=null, pingTimer=null, txTimer=null;
+let ws=null, audioCtx=null, workletNode=null, stream=null, pingTimer=null, txTimer=null;
 let playQueue=[], playing=false, joined=false, txPkts=0;
+let monitorGain=null, micSource=null;
 
 const $  = (s)=>document.querySelector(s);
 const log= (s)=>{ const el=$('#logs'); el.textContent+=s+"\n"; el.scrollTop=el.scrollHeight; };
@@ -84,10 +92,13 @@ async function getMicStream(deviceId){
 }
 
 function cleanupAudio(){
+  try{ workletNode && workletNode.disconnect(); }catch(_){}
+  try{ monitorGain && monitorGain.disconnect(); }catch(_){}
   try{ stream && stream.getTracks().forEach(t=>t.stop()); }catch(_){}
   try{ audioCtx && audioCtx.close(); }catch(_){}
   try{ clearInterval(pingTimer); }catch(_){}
   try{ clearInterval(txTimer); }catch(_){}
+  workletNode=null; monitorGain=null; micSource=null;
   audioCtx=null; stream=null; pingTimer=null; txTimer=null; txPkts=0;
 }
 
@@ -98,31 +109,10 @@ function leave(){
   $('#status').textContent="未連線"; $('#status').classList.remove('now');
 }
 
-async function fallbackScriptProcessor(source){
-  const sp = audioCtx.createScriptProcessor(2048, 1, 1);
-  sp.onaudioprocess = (e)=>{
-    const ch = e.inputBuffer.getChannelData(0);
-    const ratio = 3; // 48k -> 16k
-    const outLen = Math.floor(ch.length/ratio);
-    const pcm = new Int16Array(outLen);
-    for(let i=0;i<outLen;i++){
-      let s = ch[i*ratio];
-      if(s>1) s=1; if(s<-1) s=-1;
-      pcm[i] = s<0 ? s*0x8000 : s*0x7FFF;
-    }
-    const pkt=320; // 20ms@16k
-    for(let off=0; off<pcm.length; off+=pkt){
-      const sl=pcm.subarray(off, off+pkt);
-      if(sl.length===pkt){
-        txPkts++;
-        if(!$('#mute').checked && ws && ws.readyState===1){
-          ws.send(sl.buffer);
-        }
-      }
-    }
-  };
-  source.connect(sp); sp.connect(audioCtx.destination);
-  log(`✅ ScriptProcessor 已啟用（ctxRate=${audioCtx.sampleRate}Hz）`);
+async function setupLocalMonitor(){
+  monitorGain = audioCtx.createGain();
+  monitorGain.gain.value = $('#monitor').checked ? Number($('#monVol').value) : 0.0;
+  micSource.connect(monitorGain).connect(audioCtx.destination);
 }
 
 async function join(){
@@ -130,7 +120,7 @@ async function join(){
   await listMics();
 
   const name = ($('#name').value || 'Guest').trim().slice(0,40);
-  const srcLang = $('#srcLang').value; // 'zh' | 'ko'
+  const srcLang = $('#srcLang').value;
 
   ws = new WebSocket(`${TUNNEL_HOST.replace('https://','wss://')}/ws`);
   ws.binaryType = 'arraybuffer';
@@ -149,6 +139,12 @@ async function join(){
     audioCtx = new (window.AudioContext||window.webkitAudioContext)({sampleRate:48000});
     await audioCtx.resume().catch(()=>{});
 
+    micSource = audioCtx.createMediaStreamSource(stream);
+
+    // === 本地監聽（零延遲原音） ===
+    await setupLocalMonitor();
+
+    // === 上行壓縮：48k -> 16k、20ms 封包 ===
     try{
       if (audioCtx.audioWorklet) {
         const blobURL = URL.createObjectURL(new Blob([`
@@ -163,7 +159,7 @@ async function join(){
                 const idx=Math.floor(i*ratio); let s=ch[idx];
                 s=Math.max(-1,Math.min(1,s)); pcm[i]=s<0?s*0x8000:s*0x7FFF;
               }
-              const pkt=320;
+              const pkt=320; // 20ms@16k
               for(let off=0; off<pcm.length; off+=pkt){
                 const sl=pcm.subarray(off, off+pkt);
                 if(sl.length===pkt) this.port.postMessage(sl.buffer,[sl.buffer]);
@@ -174,32 +170,43 @@ async function join(){
           registerProcessor('pcm-worklet', PCMWorklet);
         `], {type:'application/javascript'}));
         await audioCtx.audioWorklet.addModule(blobURL);
-        const source = audioCtx.createMediaStreamSource(stream);
-        const worklet = new AudioWorkletNode(audioCtx, 'pcm-worklet');
-        let sent=0;
-        worklet.port.onmessage = (e)=>{
-          sent++; txPkts++;
+        workletNode = new AudioWorkletNode(audioCtx, 'pcm-worklet');
+        workletNode.port.onmessage = (e)=>{
+          txPkts++;
           if(!$('#mute').checked && ws && ws.readyState===1){
             ws.send(e.data);
           }
         };
-        source.connect(worklet);
+        micSource.connect(workletNode); // 只為取樣打包；本地監聽已由 monitorGain 完成
         log(`✅ Worklet 已啟用（ctxRate=${audioCtx.sampleRate}Hz）`);
-        setTimeout(()=>{
-          if(sent===0){
-            log("⚠️ Worklet 無送包，改用 ScriptProcessor");
-            try{ worklet.disconnect(); }catch(_){}
-            fallbackScriptProcessor(source);
-          }
-        }, 500);
       } else {
-        const source = audioCtx.createMediaStreamSource(stream);
-        fallbackScriptProcessor(source);
+        // Fallback：ScriptProcessor
+        const sp = audioCtx.createScriptProcessor(2048, 1, 1);
+        sp.onaudioprocess = (ev)=>{
+          const ch = ev.inputBuffer.getChannelData(0);
+          const ratio = 3; // 48k -> 16k
+          const outLen = Math.floor(ch.length/ratio);
+          const pcm = new Int16Array(outLen);
+          for(let i=0;i<outLen;i++){
+            let s = ch[i*ratio];
+            s=Math.max(-1,Math.min(1,s)); pcm[i] = s<0 ? s*0x8000 : s*0x7FFF;
+          }
+          const pkt=320;
+          for(let off=0; off<pcm.length; off+=pkt){
+            const sl=pcm.subarray(off, off+pkt);
+            if(sl.length===pkt){
+              txPkts++;
+              if(!$('#mute').checked && ws && ws.readyState===1){
+                ws.send(sl.buffer);
+              }
+            }
+          }
+        };
+        micSource.connect(sp); // 不接到 destination，避免重複；本地監聽走 monitorGain
+        log(`✅ ScriptProcessor 已啟用（ctxRate=${audioCtx.sampleRate}Hz）`);
       }
     }catch(e){
-      const source = audioCtx.createMediaStreamSource(stream);
-      log(`⚠️ Worklet 失敗：${e}`);
-      fallbackScriptProcessor(source);
+      log(`⚠️ 上行編碼節點錯誤：${e}`);
     }
 
     txTimer = setInterval(()=>{ $('#tx').textContent = `TX: ${txPkts} pkt/s`; txPkts=0; }, 1000);
@@ -209,6 +216,7 @@ async function join(){
 
   ws.onmessage = (ev)=>{
     if(ev.data instanceof ArrayBuffer){
+      // 後端現在：原音(WAV)不會回給自己；譯音(MP3)所有人都會收到
       playQueue.push(ev.data);
       if(!playing) playNext();
       return;
@@ -240,7 +248,7 @@ async function playNext(){
   if(playQueue.length===0){ playing=false; return; }
   playing=true;
   const buf=playQueue.shift();
-  const mime = sniffMime(buf);
+  const mime = sniffMime(buf); // MP3 主要是譯音；WAV 是別人的原音
   const blob=new Blob([buf],{type:mime});
   const url=URL.createObjectURL(blob);
   const a=new Audio(url);
@@ -251,6 +259,9 @@ async function playNext(){
 $('#join').onclick = join;
 $('#leave').onclick = leave;
 $('#mute').onchange = ()=>{ if(ws && ws.readyState===1) ws.send(JSON.stringify({type:'mute', value:$('#mute').checked})); };
+$('#monitor').onchange = ()=>{ if(monitorGain){ monitorGain.gain.value = $('#monitor').checked ? Number($('#monVol').value) : 0.0; } };
+$('#monVol').oninput   = ()=>{ if(monitorGain){ monitorGain.gain.value = $('#monitor').checked ? Number($('#monVol').value) : 0.0; } };
+
 navigator.mediaDevices.addEventListener('devicechange', listMics);
 listMics();
 </script>
