@@ -48,9 +48,10 @@
   <div class="logs" id="logs"></div>
 
 <script>
-const TUNNEL_HOST = "https://stretch-bachelor-admit-restoration.trycloudflare.com";
+/** 換成你本次 cloudflared 顯示的 HTTPS 網址 **/
+const TUNNEL_HOST = "https://twenty-chose-src-keeps.trycloudflare.com";
 
-let ws=null, audioCtx=null, worklet=null, stream=null, pingTimer=null, txTimer=null;
+let ws=null, audioCtx=null, stream=null, pingTimer=null, txTimer=null;
 let playQueue=[], playing=false, joined=false, txPkts=0;
 
 const $  = (s)=>document.querySelector(s);
@@ -83,12 +84,11 @@ async function getMicStream(deviceId){
 }
 
 function cleanupAudio(){
-  try{ worklet && worklet.disconnect(); }catch(_){}
   try{ stream && stream.getTracks().forEach(t=>t.stop()); }catch(_){}
   try{ audioCtx && audioCtx.close(); }catch(_){}
   try{ clearInterval(pingTimer); }catch(_){}
   try{ clearInterval(txTimer); }catch(_){}
-  worklet=null; audioCtx=null; stream=null; pingTimer=null; txTimer=null; txPkts=0;
+  audioCtx=null; stream=null; pingTimer=null; txTimer=null; txPkts=0;
 }
 
 function leave(){
@@ -121,7 +121,7 @@ async function fallbackScriptProcessor(source){
       }
     }
   };
-  try{ source.connect(sp); sp.connect(audioCtx.destination); }catch(_){}
+  source.connect(sp); sp.connect(audioCtx.destination);
   log(`✅ ScriptProcessor 已啟用（ctxRate=${audioCtx.sampleRate}Hz）`);
 }
 
