@@ -48,7 +48,6 @@
   <div class="logs" id="logs"></div>
 
 <script>
-/* 換成你的 trycloudflare 網域（含 https://） */
 const TUNNEL_HOST = "https://val-progressive-qui-tucson.trycloudflare.com";
 
 let ws=null, audioCtx=null, worklet=null, stream=null, pingTimer=null, txTimer=null;
@@ -150,7 +149,6 @@ async function join(){
     audioCtx = new (window.AudioContext||window.webkitAudioContext)({sampleRate:48000});
     await audioCtx.resume().catch(()=>{});
 
-    // 優先 AudioWorklet，沒送包就 fallback
     try{
       if (audioCtx.audioWorklet) {
         const blobURL = URL.createObjectURL(new Blob([`
@@ -177,7 +175,7 @@ async function join(){
         `], {type:'application/javascript'}));
         await audioCtx.audioWorklet.addModule(blobURL);
         const source = audioCtx.createMediaStreamSource(stream);
-        worklet = new AudioWorkletNode(audioCtx, 'pcm-worklet');
+        const worklet = new AudioWorkletNode(audioCtx, 'pcm-worklet');
         let sent=0;
         worklet.port.onmessage = (e)=>{
           sent++; txPkts++;
@@ -229,14 +227,12 @@ async function join(){
 }
 
 function sniffMime(buf){
-  // WAV = 'RIFF' .... 'WAVE' header
   if (buf.byteLength >= 12){
     const dv = new DataView(buf);
     const riff = String.fromCharCode(dv.getUint8(0),dv.getUint8(1),dv.getUint8(2),dv.getUint8(3));
     const wave = String.fromCharCode(dv.getUint8(8),dv.getUint8(9),dv.getUint8(10),dv.getUint8(11));
     if (riff === 'RIFF' && wave === 'WAVE') return 'audio/wav';
   }
-  // 其他一律當 MP3（edge-tts）
   return 'audio/mpeg';
 }
 
@@ -249,7 +245,7 @@ async function playNext(){
   const url=URL.createObjectURL(blob);
   const a=new Audio(url);
   a.onended=()=>{ URL.revokeObjectURL(url); playNext(); };
-  a.play().catch(()=>{ /* 某些瀏覽器需要使用者互動後才可自動播放 */ });
+  a.play().catch(()=>{ /* 某些瀏覽器需要互動才自動播放 */ });
 }
 
 $('#join').onclick = join;
