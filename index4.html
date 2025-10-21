@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>中↔韓 同聲傳譯（4060｜不回放自己原音｜譯音自己也聽到）</title>
+<title>中↔韓 同聲傳譯｜自己能聽到譯音（含 TTS 備援）</title>
 <style>
   body{font-family:system-ui,-apple-system,"Noto Sans TC","Microsoft JhengHei",Arial;padding:20px;max-width:920px;margin:auto}
   .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
@@ -16,7 +16,7 @@
   .hint{color:#666;font-size:13px}
 </style>
 <body>
-  <h2>中↔韓 同聲傳譯（說一句翻一句｜不回放自己原音｜譯音自己也聽到）</h2>
+  <h2>中↔韓 同聲傳譯（說一句翻一句｜不回放自己原音｜Edge TTS 失敗自動備援）</h2>
 
   <div class="row">
     <label>名稱</label>
@@ -44,7 +44,7 @@
     <select id="micSel"></select>
     <label for="outSel">輸出裝置</label>
     <select id="outSel"></select>
-    <span class="hint">AirPods：輸入選「Headset/麥克風」，輸出選「Headphones/耳機」。可自由切換，不會被強制改。</span>
+    <span class="hint">MP3 會走你選的輸出裝置；若啟用瀏覽器備援朗讀，音訊走系統預設輸出。</span>
   </div>
 
   <div class="logs" id="logs"></div>
@@ -107,7 +107,7 @@ function leave(){
 }
 
 async function fallbackScriptProcessor(source){
-  // 用 ScriptProcessor 串到一個「靜音」的 zeroGain → destination，process 會跑但不回放自己原音
+  // 接到「靜音 zeroGain」→ destination，處理會跑但不回放自己原音
   const zeroGain = audioCtx.createGain(); zeroGain.gain.value = 0;
   sp = audioCtx.createScriptProcessor(2048,1,1);
   sp.onaudioprocess = (ev)=>{
@@ -217,8 +217,8 @@ async function join(){
   };
 
   ws.onmessage = async (ev)=>{
-    // 伺服器回的「原音=WAV（別人說）」或「譯音=MP3（所有人含自己）」：以你選的輸出裝置播放
     if(ev.data instanceof ArrayBuffer){
+      // 伺服器來的音：原音=WAV（別人說）或 譯音=MP3（所有人含自己）
       const buf = ev.data;
       const mime = sniffMime(buf);
       const blob = new Blob([buf],{type:mime});
@@ -239,6 +239,10 @@ async function join(){
       if(o.type==="final") log(`✅ ${o.from}（${o.dir}）\n原文：${o.text}\n翻譯：${o.mt}`);
       if(o.type==="mute")  log(`🔇 ${o.name} ${o.muted?"已靜音":"取消靜音"}`);
       if(o.type==="error") log(`❌ ${o.msg}`);
+      if(o.type==="tts_fallback"){
+        // Edge TTS 全失敗 → 用瀏覽器朗讀，至少你能聽到
+        speakFallback(o.text, o.lang);
+      }
     }catch(_){}
   };
 
@@ -253,6 +257,27 @@ function sniffMime(buf){
     if (riff === 'RIFF' && wave === 'WAVE') return 'audio/wav';
   }
   return 'audio/mpeg';
+}
+
+// --- 瀏覽器備援朗讀（Edge TTS 失敗時啟用）---
+let voices = [];
+function loadVoices(){
+  voices = window.speechSynthesis.getVoices() || [];
+}
+if ('speechSynthesis' in window){
+  loadVoices();
+  window.speechSynthesis.onvoiceschanged = loadVoices;
+}
+function speakFallback(text, lang){
+  if (!('speechSynthesis' in window)) { log("⚠️ 瀏覽器不支援備援朗讀"); return; }
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = (lang==="ko" ? "ko-KR" : "zh-TW");
+  // 選擇最匹配的系統語音
+  const cand = voices.filter(v => v.lang && v.lang.toLowerCase().startsWith(lang==="ko"?"ko":"zh"));
+  if (cand.length) u.voice = cand[0];
+  u.rate = 1.0; u.pitch = 1.0; u.volume = 1.0;
+  window.speechSynthesis.cancel(); // 先清空佇列
+  window.speechSynthesis.speak(u);
 }
 
 $('#join').onclick = join;
