@@ -16,40 +16,41 @@
   .hint{color:#666;font-size:13px}
 </style>
 <body>
-  <h2>中↔韓 同聲傳譯（說一句翻一句｜自己端立即朗讀｜Edge TTS 供他人播放）</h2>
+  <h2>中↔韓 同聲傳譯（說一句翻一句｜自己端立即朗讀｜Edge TTS 給他人）</h2>
 
   <div class="row">
-    <label>名稱</label>
-    <input id="name" type="text" value="Public" />
-    <label>來源語言</label>
+    <label>名稱(이름)</label>
+    <input id="name" type="text" value="Public" placeholder="你的名字 / 이름" />
+    <label>來源語言(원어)</label>
     <select id="srcLang">
-      <option value="zh" selected>中文</option>
-      <option value="ko">韓文</option>
+      <option value="zh" selected>中文 (중국어)</option>
+      <option value="ko">韓文 (한국어)</option>
     </select>
-    <button id="join">加入</button>
-    <button id="leave" disabled>離開</button>
-    <span class="pill" id="status">未連線</span>
+    <button id="join">加入(입장)</button>
+    <button id="leave" disabled>離開(나가기)</button>
+    <span class="pill" id="status">未連線(미연결)</span>
   </div>
 
   <div class="row" style="margin-top:10px">
-    <label><input id="mute" type="checkbox"> 不送出麥克風</label>
-    <label><input id="echo" type="checkbox" checked> 回聲抑制</label>
-    <label><input id="ns"   type="checkbox" checked> 降噪</label>
-    <label><input id="agc"  type="checkbox"> 自動增益</label>
+    <label><input id="mute" type="checkbox"> 不送出麥克風(마이크 전송 안 함)</label>
+    <label><input id="echo" type="checkbox" checked> 回聲抑制(에코 제거)</label>
+    <label><input id="ns"   type="checkbox" checked> 降噪(소음 억제)</label>
+    <label><input id="agc"  type="checkbox"> 自動增益(자동 이득)</label>
     <span class="stat" id="tx">TX: 0 pkt/s</span>
   </div>
 
   <div class="row" style="margin-top:10px">
-    <label for="micSel">輸入裝置</label>
+    <label for="micSel">輸入裝置(마이크)</label>
     <select id="micSel"></select>
-    <label for="outSel">輸出裝置（Edge TTS MP3 用）</label>
+    <label for="outSel">輸出裝置(출력 장치, Edge TTS)</label>
     <select id="outSel"></select>
-    <span class="hint">你自己聽到的是瀏覽器朗讀（走系統預設輸出）；Edge TTS 的 MP3 只播給其他人，會走這裡選的輸出。</span>
+    <span class="hint">你自己聽到的是瀏覽器朗讀（系統預設輸出）/ 본인 재생은 브라우저 음성합성 사용.</span>
   </div>
 
   <div class="logs" id="logs"></div>
 
 <script>
+// 換成 cloudflared 顯示的網址（含 https://）
 const TUNNEL_HOST = "https://briefly-enlarge-packaging-adjustable.trycloudflare.com";
 
 let ws=null, audioCtx=null, worklet=null, sp=null, stream=null, pingTimer=null, txTimer=null;
@@ -65,9 +66,9 @@ async function refreshDevices(){
   const mics = devicesCache.filter(d=>d.kind==="audioinput");
   const outs = devicesCache.filter(d=>d.kind==="audiooutput");
   const micSel=$('#micSel'); micSel.innerHTML="";
-  mics.forEach(d=>{ const o=document.createElement('option'); o.value=d.deviceId; o.textContent=d.label || `麥克風(${d.deviceId.slice(0,6)}…)`; micSel.appendChild(o); });
+  mics.forEach(d=>{ const o=document.createElement('option'); o.value=d.deviceId; o.textContent=d.label || `麥克風/마이크 (${d.deviceId.slice(0,6)}…)`; micSel.appendChild(o); });
   const outSel=$('#outSel'); outSel.innerHTML="";
-  outs.forEach(d=>{ const o=document.createElement('option'); o.value=d.deviceId; o.textContent=d.label || `輸出(${d.deviceId.slice(0,6)}…)`; outSel.appendChild(o); });
+  outs.forEach(d=>{ const o=document.createElement('option'); o.value=d.deviceId; o.textContent=d.label || `輸出/출력 (${d.deviceId.slice(0,6)}…)`; outSel.appendChild(o); });
   if (currentMicId && [...micSel.options].some(o=>o.value===currentMicId)) micSel.value=currentMicId;
   if (currentOutId && [...outSel.options].some(o=>o.value===currentOutId)) outSel.value=currentOutId;
 }
@@ -98,7 +99,7 @@ function leave(){
   if(ws){ try{ ws.close(); }catch(_){} }
   cleanupAudio();
   $('#join').disabled=false; $('#leave').disabled=true;
-  $('#status').textContent="未連線"; $('#status').classList.remove('now');
+  $('#status').textContent="未連線(미연결)"; $('#status').classList.remove('now');
 }
 
 async function fallbackScriptProcessor(source){
@@ -126,7 +127,7 @@ async function fallbackScriptProcessor(source){
     }
   };
   source.connect(sp); sp.connect(zeroGain); zeroGain.connect(audioCtx.destination);
-  log(`✅ ScriptProcessor 已啟用（ctxRate=${audioCtx.sampleRate}Hz）`);
+  log(`✅ ScriptProcessor 啟用(사용)（ctxRate=${audioCtx.sampleRate}Hz）`);
 }
 
 async function join(){
@@ -140,15 +141,15 @@ async function join(){
   ws.binaryType = 'arraybuffer';
 
   ws.onopen = async ()=>{
-    $('#status').textContent="已連線"; $('#status').classList.add('now');
+    $('#status').textContent="已連線(연결됨)"; $('#status').classList.add('now');
     ws.send(JSON.stringify({name, src_lang: srcLang}));
 
     try{
       const devId = $('#micSel').value || undefined;
       stream = await getMicStream(devId);
       const info = stream.getAudioTracks()[0]?.getSettings?.() || {};
-      log(`🎙️ mic：${(stream.getAudioTracks()[0]?.label)||'未知'} | 設定：${JSON.stringify(info)}`);
-    }catch(e){ log(`❌ 取得麥克風失敗：${e}`); return; }
+      log(`🎙️ mic：${(stream.getAudioTracks()[0]?.label)||'未知/알 수 없음'} | 設定/설정：${JSON.stringify(info)}`);
+    }catch(e){ log(`❌ 取得麥克風失敗(마이크 실패)：${e}`); return; }
 
     audioCtx = new (window.AudioContext||window.webkitAudioContext)({sampleRate:48000});
     await audioCtx.resume().catch(()=>{});
@@ -191,16 +192,16 @@ async function join(){
         };
 
         source.connect(worklet); worklet.connect(zeroGain); zeroGain.connect(audioCtx.destination);
-        log(`✅ Worklet 已啟用（ctxRate=${audioCtx.sampleRate}Hz）`);
+        log(`✅ Worklet 啟用(사용)（ctxRate=${audioCtx.sampleRate}Hz）`);
 
-        setTimeout(()=>{ if(sent===0){ log("⚠️ Worklet 無送包，改 ScriptProcessor"); try{ worklet.disconnect(); }catch(_){ } fallbackScriptProcessor(source); } }, 700);
+        setTimeout(()=>{ if(sent===0){ log("⚠️ Worklet 無送包(전송 無)，改 ScriptProcessor"); try{ worklet.disconnect(); }catch(_){ } fallbackScriptProcessor(source); } }, 700);
       } else {
         const source = audioCtx.createMediaStreamSource(stream);
         await fallbackScriptProcessor(source);
       }
     }catch(e){
       const source = audioCtx.createMediaStreamSource(stream);
-      log(`⚠️ Worklet 失敗：${e}`);
+      log(`⚠️ Worklet 失敗(실패)：${e}`);
       await fallbackScriptProcessor(source);
     }
 
@@ -219,7 +220,7 @@ async function join(){
       const a = new Audio(url);
       a.autoplay = true;
       if (typeof a.setSinkId === 'function' && $('#outSel').value){
-        try { await a.setSinkId($('#outSel').value); } catch(e){ log(`⚠️ 設定輸出失敗：${e}`); }
+        try { await a.setSinkId($('#outSel').value); } catch(e){ log(`⚠️ 設定輸出失敗(출력 설정 실패)：${e}`); }
       }
       a.onended = ()=>{ URL.revokeObjectURL(url); };
       a.play().catch(()=>{});
@@ -227,20 +228,20 @@ async function join(){
     }
     try{
       const o=JSON.parse(ev.data);
-      if(o.type==="join")  log(`🔵 ${o.name} 加入，人數 ${o.count}`);
-      if(o.type==="leave") log(`⚪ ${o.name} 離開，人數 ${o.count}`);
-      if(o.type==="final") log(`✅ ${o.from}（${o.dir}）\n原文：${o.text}\n翻譯：${o.mt}`);
-      if(o.type==="mute")  log(`🔇 ${o.name} ${o.muted?"已靜音":"取消靜音"}`);
+      if(o.type==="join")  log(`🔵 ${o.name} 加入(입장)，人數/인원 ${o.count}`);
+      if(o.type==="leave") log(`⚪ ${o.name} 離開(나가기)，人數/인원 ${o.count}`);
+      if(o.type==="final") log(`✅ ${o.from}（${o.dir}）\n原文/원문：${o.text}\n翻譯/번역：${o.mt}`);
+      if(o.type==="mute")  log(`🔇 ${o.name} ${o.muted?"已靜音(음소거)":"取消靜音(해제)"}`);
       if(o.type==="error") log(`❌ ${o.msg}`);
 
-      // 只對「自己」送來的即時朗讀事件
+      // 只對「自己」送來的即時朗讀事件（Edge TTS 失敗也不影響）
       if(o.type==="tts_client"){
         speakNow(o.text, o.lang);
       }
     }catch(_){}
   };
 
-  ws.onclose = ()=>{ log("連線關閉"); leave(); };
+  ws.onclose = ()=>{ log("連線關閉(연결 종료)"); leave(); };
 }
 
 function sniffMime(buf){
@@ -253,7 +254,7 @@ function sniffMime(buf){
   return 'audio/mpeg';
 }
 
-/* 你的端：立即用 Web Speech 朗讀（走系統預設輸出、延遲極低） */
+/* 你的端：立即用 Web Speech 朗讀（極低延遲）*/
 let voices = [];
 function loadVoices(){ voices = window.speechSynthesis.getVoices() || []; }
 if ('speechSynthesis' in window){
@@ -261,13 +262,13 @@ if ('speechSynthesis' in window){
   window.speechSynthesis.onvoiceschanged = loadVoices;
 }
 function speakNow(text, lang){
-  if (!('speechSynthesis' in window)) { log("⚠️ 瀏覽器不支援朗讀"); return; }
+  if (!('speechSynthesis' in window)) { log("⚠️ 瀏覽器不支援朗讀(미지원)"); return; }
   const u = new SpeechSynthesisUtterance(text);
   u.lang = (lang==="ko" ? "ko-KR" : "zh-TW");
   const cand = voices.filter(v => v.lang && v.lang.toLowerCase().startsWith(lang==="ko"?"ko":"zh"));
   if (cand.length) u.voice = cand[0];
   u.rate = 1.0; u.pitch = 1.0; u.volume = 1.0;
-  window.speechSynthesis.cancel(); // 避免排隊
+  window.speechSynthesis.cancel(); // 避免排隊/대기 방지
   window.speechSynthesis.speak(u);
 }
 
