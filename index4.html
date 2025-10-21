@@ -54,7 +54,7 @@ function getHostFromQuery(){
   const u = new URL(location.href);
   return (u.searchParams.get("host") || "").trim();
 }
-const DEFAULT_HOST = "technologies-future-originally-bullet.trycloudflare.com";
+const DEFAULT_HOST = "cube-would-reforms-commerce.trycloudflare.com";
 const TUNNEL_HOST = "https://" + (getHostFromQuery() || DEFAULT_HOST);
 
 let ws=null, audioCtx=null, worklet=null, sp=null, stream=null, pingTimer=null, txTimer=null;
