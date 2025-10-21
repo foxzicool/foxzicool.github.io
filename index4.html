@@ -2,59 +2,167 @@
 <html lang="zh-Hant">
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>中↔韓 同聲傳譯｜自己端只聽機器人｜他人聽MP3</title>
+<title>中↔韓 同聲傳譯 / 중↔한 동시통역｜自己端 TTS、他人 MP3 / 내 쪽 TTS, 상대 MP3</title>
 <style>
-  body{font-family:system-ui,-apple-system,"Noto Sans TC","Microsoft JhengHei",Arial;padding:20px;max-width:920px;margin:auto}
-  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-  input,select,button{padding:8px 10px;border:1px solid #bbb;border-radius:10px;background:#fff}
-  button{cursor:pointer}
-  button[disabled]{opacity:.5;cursor:not-allowed}
-  .pill{padding:4px 10px;border-radius:999px;background:#efefef;font-size:12px}
-  .logs{margin-top:12px;padding:10px;border:1px solid #eee;border-radius:10px;background:#fafafa;height:380px;overflow:auto;font-size:14px;white-space:pre-wrap}
-  .now{color:#1b7fbd}
-  .stat{font-family:monospace}
-  .hint{color:#666;font-size:13px}
+  :root{
+    --bg: #0b1220;
+    --card: rgba(255,255,255,.06);
+    --card-border: rgba(255,255,255,.12);
+    --text: #e8eefb;
+    --muted: #9fb0c9;
+    --accent: #6ea8fe;
+    --accent-2: #22d3ee;
+    --ok: #10b981;
+    --warn: #f59e0b;
+    --danger: #ef4444;
+    --chip: rgba(255,255,255,.14);
+    --chip-text:#d9e4ff;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0; color:var(--text);
+    font-family:system-ui,-apple-system,"Noto Sans TC","Noto Sans KR","Microsoft JhengHei","Apple SD Gothic Neo",Segoe UI,Roboto,Helvetica,Arial;
+    background:
+      radial-gradient(1200px 600px at 10% 0%, #1a2744 0%, transparent 60%),
+      radial-gradient(1000px 500px at 100% 0%, #0f2a38 0%, transparent 60%),
+      linear-gradient(180deg, #0b1220 0%, #0b1220 100%);
+    padding:28px;
+  }
+  .wrap{max-width:1080px;margin:auto}
+  h1{
+    margin:0 0 14px 0; letter-spacing:.4px;
+    font-weight:800; line-height:1.2; font-size:clamp(20px,3vw,28px)
+  }
+  .sub{
+    color:var(--muted); font-size:13px; margin-bottom:18px
+  }
+  .grid{
+    display:grid; gap:16px;
+    grid-template-columns: 1fr;
+  }
+  @media (min-width: 900px){
+    .grid{ grid-template-columns: 1.2fr .8fr; }
+  }
+  .card{
+    background:var(--card);
+    border:1px solid var(--card-border);
+    border-radius:16px; padding:16px;
+    backdrop-filter: blur(8px);
+    box-shadow: 0 10px 30px rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.06);
+  }
+  .row{display:flex; gap:12px; align-items:center; flex-wrap:wrap}
+  label{font-size:13px; color:var(--muted)}
+  .bi{font-size:12px; color:var(--muted); margin-left:6px}
+  input,select,button{
+    padding:10px 12px; border:1px solid var(--card-border);
+    border-radius:12px; background:rgba(255,255,255,.06); color:var(--text);
+    outline:none; transition: all .15s ease;
+  }
+  input:focus,select:focus{border-color:var(--accent)}
+  select{cursor:pointer}
+  button{
+    cursor:pointer; border:1px solid transparent;
+    background:linear-gradient(135deg, var(--accent), var(--accent-2));
+    color:#0b1220; font-weight:700;
+    box-shadow:0 6px 20px rgba(34,211,238,.28);
+  }
+  button.ghost{
+    background: transparent; color:var(--text);
+    border-color:var(--card-border);
+  }
+  button[disabled]{opacity:.55; cursor:not-allowed; filter:grayscale(40%)}
+  .pill{
+    padding:6px 12px; border-radius:999px; background:var(--chip); color:var(--chip-text);
+    font-size:12px; display:inline-flex; align-items:center; gap:6px
+  }
+  .pill.now{ background:rgba(16,185,129,.18); color:#bff7e6; border:1px solid rgba(16,185,129,.35)}
+  .stat{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; color:#bcd2ff}
+  .hint{color:var(--muted); font-size:12.5px; line-height:1.7}
+  .section-title{font-weight:700; margin-bottom:8px; letter-spacing:.3px}
+
+  .logs{
+    margin-top:10px; padding:12px; border:1px dashed var(--card-border);
+    border-radius:12px; background:rgba(10,17,30,.55); height:420px; overflow:auto;
+    font-size:14px; white-space:pre-wrap;
+  }
+  .k{opacity:.85; font-weight:600}
+  .divider{height:1px; background:var(--card-border); margin:10px 0}
+  .spacer{flex:1}
+  .bad{color:var(--danger)} .ok{color:var(--ok)} .warn{color:var(--warn)}
 </style>
+
 <body>
-  <h2>中↔韓 同聲傳譯（自己端：機器人朗讀；他人：Edge TTS MP3；不播任何人聲）</h2>
+  <div class="wrap">
+    <h1>中↔韓 同聲傳譯 <span class="k">/ 중↔한 동시통역</span></h1>
+    <div class="sub">自己端：機器人朗讀；他人：Edge TTS MP3；不播任何人聲
+      <span class="k">/ 내 쪽: 기계 음성 낭독 · 상대: Edge TTS MP3 · 원음 방송 없음</span>
+    </div>
 
-  <div class="row">
-    <label>名稱</label>
-    <input id="name" type="text" value="Public" />
-    <label>來源語言</label>
-    <select id="srcLang">
-      <option value="zh" selected>中文</option>
-      <option value="ko">韓文</option>
-    </select>
-    <button id="join">加入</button>
-    <button id="leave" disabled>離開</button>
-    <span class="pill" id="status">未連線</span>
+    <div class="grid">
+      <!-- 控制卡片 / Controls -->
+      <div class="card">
+        <div class="section-title">連線與會話 <span class="k">/ 연결 & 세션</span></div>
+
+        <div class="row" style="margin-bottom:10px">
+          <label for="name">名稱 <span class="k">/ 이름</span></label>
+          <input id="name" type="text" value="Public" placeholder="你的代號 / 닉네임"/>
+
+          <label for="srcLang">來源語言 <span class="k">/ 원본 언어</span></label>
+          <select id="srcLang" title="來源語言 / 원본 언어">
+            <option value="zh" selected>中文 (zh) <span class="k">/ 중국어</span></option>
+            <option value="ko">韓文 (ko) <span class="k">/ 한국어</span></option>
+          </select>
+
+          <button id="join">加入 <span class="k">/ 참여</span></button>
+          <button id="leave" class="ghost" disabled>離開 <span class="k">/ 나가기</span></button>
+
+          <span class="pill" id="status">未連線 <span class="k">/ 미연결</span></span>
+          <span class="spacer"></span>
+          <span class="stat" id="tx">TX: 0 pkt/s</span>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="section-title">音訊偏好 <span class="k">/ 오디오 설정</span></div>
+        <div class="row" style="margin-bottom:8px">
+          <label><input id="mute" type="checkbox"> 不送出麥克風 <span class="k">/ 마이크 전송 안 함</span></label>
+          <label><input id="echo" type="checkbox" checked> 回聲抑制 <span class="k">/ 에코 억제</span></label>
+          <label><input id="ns"   type="checkbox" checked> 降噪 <span class="k">/ 소음 억제</span></label>
+          <label><input id="agc"  type="checkbox"> 自動增益 <span class="k">/ 자동 증폭</span></label>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="section-title">裝置選擇 <span class="k">/ 장치 선택</span></div>
+        <div class="row" style="margin-bottom:6px">
+          <label for="micSel">輸入裝置 <span class="k">/ 입력 장치</span></label>
+          <select id="micSel"></select>
+
+          <label for="outSel">輸出裝置（播放他人譯音 MP3） <span class="k">/ 출력 장치(상대 번역 MP3)</span></label>
+          <select id="outSel"></select>
+        </div>
+
+        <p class="hint">
+          伺服器只會傳「譯音 MP3」給其他人；發話者本人不會收到任何人聲，僅在自己瀏覽器以 TTS 朗讀。若 MP3 失敗，將改用「文字備援」，由對方瀏覽器本地朗讀。<br>
+          <span class="k">서버는 상대에게만 번역 음성(MP3)을 보냅니다. 발화자는 어떤 사람의 원음도 듣지 않고, 본인 브라우저에서 TTS로만 청취합니다. MP3 실패 시 텍스트로 대체되어 상대 브라우저에서 로컬 낭독됩니다.</span>
+        </p>
+      </div>
+
+      <!-- 記錄 / Logs -->
+      <div class="card">
+        <div class="section-title">訊息紀錄 <span class="k">/ 로그</span></div>
+        <div class="logs" id="logs"></div>
+      </div>
+    </div>
   </div>
-
-  <div class="row" style="margin-top:10px">
-    <label><input id="mute" type="checkbox"> 不送出麥克風</label>
-    <label><input id="echo" type="checkbox" checked> 回聲抑制</label>
-    <label><input id="ns"   type="checkbox" checked> 降噪</label>
-    <label><input id="agc"  type="checkbox"> 自動增益</label>
-    <span class="stat" id="tx">TX: 0 pkt/s</span>
-  </div>
-
-  <div class="row" style="margin-top:10px">
-    <label for="micSel">輸入裝置</label>
-    <select id="micSel"></select>
-    <label for="outSel">輸出裝置（播放他人譯音 MP3）</label>
-    <select id="outSel"></select>
-    <span class="hint">伺服器只會傳譯音 MP3；發話者自己不會收到音訊，僅本地朗讀。若 MP3 失敗，會以文字備援，本地朗讀仍是機器聲。</span>
-  </div>
-
-  <div class="logs" id="logs"></div>
 
 <script>
 function getHostFromQuery(){
   const u = new URL(location.href);
   return (u.searchParams.get("host") || "").trim();
 }
-const DEFAULT_HOST = "cube-would-reforms-commerce.trycloudflare.com";
+const DEFAULT_HOST = "cant-legendary-hist-expansys.trycloudflare.com";
 const TUNNEL_HOST = "https://" + (getHostFromQuery() || DEFAULT_HOST);
 
 let ws=null, audioCtx=null, worklet=null, sp=null, stream=null, pingTimer=null, txTimer=null;
@@ -70,9 +178,9 @@ async function refreshDevices(){
   const mics = devicesCache.filter(d=>d.kind==="audioinput");
   const outs = devicesCache.filter(d=>d.kind==="audiooutput");
   const micSel=$('#micSel'); micSel.innerHTML="";
-  mics.forEach(d=>{ const o=document.createElement('option'); o.value=d.deviceId; o.textContent=d.label || `麥克風(${d.deviceId.slice(0,6)}…)`; micSel.appendChild(o); });
+  mics.forEach(d=>{ const o=document.createElement('option'); o.value=d.deviceId; o.textContent=d.label || `麥克風/마이크(${d.deviceId.slice(0,6)}…)`; micSel.appendChild(o); });
   const outSel=$('#outSel'); outSel.innerHTML="";
-  outs.forEach(d=>{ const o=document.createElement('option'); o.value=d.deviceId; o.textContent=d.label || `輸出(${d.deviceId.slice(0,6)}…)`; outSel.appendChild(o); });
+  outs.forEach(d=>{ const o=document.createElement('option'); o.value=d.deviceId; o.textContent=d.label || `輸出/출력(${d.deviceId.slice(0,6)}…)`; outSel.appendChild(o); });
   if (currentMicId && [...micSel.options].some(o=>o.value===currentMicId)) micSel.value=currentMicId;
   if (currentOutId && [...outSel.options].some(o=>o.value===currentOutId)) outSel.value=currentOutId;
 }
@@ -103,7 +211,7 @@ function leave(){
   if(ws){ try{ ws.close(); }catch(_){} }
   cleanupAudio();
   $('#join').disabled=false; $('#leave').disabled=true;
-  $('#status').textContent="未連線"; $('#status').classList.remove('now');
+  $('#status').textContent="未連線 / 미연결"; $('#status').classList.remove('now');
 }
 
 async function fallbackScriptProcessor(source){
@@ -131,7 +239,7 @@ async function fallbackScriptProcessor(source){
     }
   };
   source.connect(sp); sp.connect(zeroGain); zeroGain.connect(audioCtx.destination);
-  log(`✅ ScriptProcessor 已啟用（ctxRate=${audioCtx.sampleRate}Hz）`);
+  log(`✅ ScriptProcessor 啟用/활성화（ctxRate=${audioCtx.sampleRate}Hz）`);
 }
 
 async function join(){
@@ -145,7 +253,7 @@ async function join(){
   ws.binaryType = 'arraybuffer';
 
   ws.onopen = async ()=>{
-    $('#status').textContent="已連線"; $('#status').classList.add('now');
+    $('#status').textContent="已連線 / 연결됨"; $('#status').classList.add('now');
     ws.send(JSON.stringify({name, src_lang: srcLang}));
 
     try{
@@ -153,8 +261,8 @@ async function join(){
       const streamLocal = await getMicStream(devId);
       stream = streamLocal;
       const info = stream.getAudioTracks()[0]?.getSettings?.() || {};
-      log(`🎙️ mic：${(stream.getAudioTracks()[0]?.label)||'未知'} | 設定：${JSON.stringify(info)}`);
-    }catch(e){ log(`❌ 取得麥克風失敗：${e}`); return; }
+      log(`🎙️ mic/마이크：${(stream.getAudioTracks()[0]?.label)||'未知/알수없음'} | 設定/설정：${JSON.stringify(info)}`);
+    }catch(e){ log(`❌ 取得麥克風失敗/마이크 에러：${e}`); return; }
 
     audioCtx = new (window.AudioContext||window.webkitAudioContext)({sampleRate:48000});
     await audioCtx.resume().catch(()=>{});
@@ -198,16 +306,16 @@ async function join(){
         };
 
         source.connect(worklet); worklet.connect(zeroGain); zeroGain.connect(audioCtx.destination);
-        log(`✅ Worklet 已啟用（ctxRate=${audioCtx.sampleRate}Hz）`);
+        log(`✅ Worklet 啟用/활성화（ctxRate=${audioCtx.sampleRate}Hz）`);
 
-        setTimeout(()=>{ if(sent===0){ log("⚠️ Worklet 無送包，改 ScriptProcessor"); try{ worklet.disconnect(); }catch(_){ } fallbackScriptProcessor(source); } }, 700);
+        setTimeout(()=>{ if(sent===0){ log("⚠️ Worklet 無送包/패킷 없음，改 ScriptProcessor"); try{ worklet.disconnect(); }catch(_){ } fallbackScriptProcessor(source); } }, 700);
       } else {
         const source = audioCtx.createMediaStreamSource(stream);
         await fallbackScriptProcessor(source);
       }
     }catch(e){
       const source = audioCtx.createMediaStreamSource(stream);
-      log(`⚠️ Worklet 失敗：${e}`);
+      log(`⚠️ Worklet 失敗/실패：${e}`);
       await fallbackScriptProcessor(source);
     }
 
@@ -225,7 +333,7 @@ async function join(){
       const a = new Audio(url);
       a.autoplay = true;
       if (typeof a.setSinkId === 'function' && $('#outSel').value){
-        try { await a.setSinkId($('#outSel').value); } catch(e){ log(`⚠️ 設定輸出失敗：${e}`); }
+        try { await a.setSinkId($('#outSel').value); } catch(e){ log(`⚠️ 設定輸出失敗/출력 장치 오류：${e}`); }
       }
       a.onended = ()=>{ URL.revokeObjectURL(url); };
       a.play().catch(()=>{});
@@ -233,11 +341,11 @@ async function join(){
     }
     try{
       const o=JSON.parse(ev.data);
-      if(o.type==="join")  log(`🔵 ${o.name} 加入，人數 ${o.count}`);
-      if(o.type==="leave") log(`⚪ ${o.name} 離開，人數 ${o.count}`);
-      if(o.type==="final") log(`✅ ${o.from}（${o.dir}）\n原文：${o.text}\n翻譯：${o.mt}`);
-      if(o.type==="mute")  log(`🔇 ${o.name} ${o.muted?"已靜音":"取消靜音"}`);
-      if(o.type==="error") log(`❌ ${o.msg}`);
+      if(o.type==="join")  log(`🔵 ${o.name} 加入/참여，人數/인원 ${o.count}`);
+      if(o.type==="leave") log(`⚪ ${o.name} 離開/나가기，人數/인원 ${o.count}`);
+      if(o.type==="final") log(`✅ ${o.from}（${o.dir}）\n原文/원문：${o.text}\n翻譯/번역：${o.mt}`);
+      if(o.type==="mute")  log(`🔇 ${o.name} ${o.muted?"已靜音/음소거됨":"取消靜音/음소거 해제"}`);
+      if(o.type==="error") log(`❌ 錯誤/오류：${o.msg}`);
       if(o.type==="tts_info") log(`🎧 MP3 bytes=${o.bytes} from ${o.from}`);
 
       // 只對本人：立刻本地朗讀
@@ -251,10 +359,10 @@ async function join(){
     }catch(_){}
   };
 
-  ws.onclose = ()=>{ log("連線關閉"); leave(); };
+  ws.onclose = ()=>{ log("連線關閉/연결 종료"); leave(); };
 }
 
-/* 本地即時朗讀：只朗讀譯文（中文或韓文） */
+/* 本地即時朗讀：只朗讀譯文（中文或韓文） / 로컬 즉시 낭독: 번역문만 읽기(중/한) */
 let voices = [];
 function loadVoices(){ voices = window.speechSynthesis.getVoices() || []; }
 if ('speechSynthesis' in window){
@@ -262,7 +370,7 @@ if ('speechSynthesis' in window){
   window.speechSynthesis.onvoiceschanged = loadVoices;
 }
 function speakNow(text, lang){
-  if (!('speechSynthesis' in window)) { log("⚠️ 瀏覽器不支援朗讀"); return; }
+  if (!('speechSynthesis' in window)) { log("⚠️ 瀏覽器不支援朗讀/브라우저 미지원"); return; }
   const u = new SpeechSynthesisUtterance(text);
   u.lang = (lang==="ko" ? "ko-KR" : "zh-TW");
   const cand = voices.filter(v => v.lang && v.lang.toLowerCase().startsWith(lang==="ko"?"ko":"zh"));
