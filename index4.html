@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>中↔韓 同聲傳譯｜只播譯音給他人（自己不播放）</title>
+<title>中↔韓 同聲傳譯｜自己端只聽機器人｜他人聽MP3</title>
 <style>
   body{font-family:system-ui,-apple-system,"Noto Sans TC","Microsoft JhengHei",Arial;padding:20px;max-width:920px;margin:auto}
   .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
@@ -16,7 +16,7 @@
   .hint{color:#666;font-size:13px}
 </style>
 <body>
-  <h2>中↔韓 同聲傳譯（只播翻譯給他人｜自己完全不播放）</h2>
+  <h2>中↔韓 同聲傳譯（自己端：機器人朗讀；他人：Edge TTS MP3；不播任何人聲）</h2>
 
   <div class="row">
     <label>名稱</label>
@@ -44,16 +44,20 @@
     <select id="micSel"></select>
     <label for="outSel">輸出裝置（播放他人譯音 MP3）</label>
     <select id="outSel"></select>
-    <span class="hint">伺服器只會傳譯音 MP3；發話者本人不會收到任何音訊。</span>
+    <span class="hint">伺服器只會傳譯音 MP3；發話者自己不會收到音訊，僅本地朗讀。</span>
   </div>
 
   <div class="logs" id="logs"></div>
 
 <script>
-// ★ 固定你的 trycloudflare 主機（不含路徑）：
-const TUNNEL_HOST = "https://opening-virtually-jenny-favorites.trycloudflare.com";
+function getHostFromQuery(){
+  const u = new URL(location.href);
+  return (u.searchParams.get("host") || "").trim();
+}
+const DEFAULT_HOST = "formed-pavilion-practitioners-marks.trycloudflare.com"; // 每次 cloudflared 變更，改這行或用 ?host=
+const TUNNEL_HOST = "https://" + (getHostFromQuery() || DEFAULT_HOST);
 
-let ws=null, audioCtx=null, worklet=null, sp=null, stream=null, pingTimer=null, txTimer=null;
+let ws=null, audioCtx=null, sp=null, stream=null, pingTimer=null, txTimer=null;
 let txPkts=0;
 
 let devicesCache=[]; let currentMicId=""; let currentOutId="";
@@ -87,13 +91,12 @@ async function getMicStream(deviceId){
 }
 
 function cleanupAudio(){
-  try{ worklet && worklet.disconnect(); }catch(_){}
   try{ sp && sp.disconnect(); }catch(_){}
   try{ stream && stream.getTracks().forEach(t=>t.stop()); }catch(_){}
   try{ audioCtx && audioCtx.close(); }catch(_){}
   try{ clearInterval(pingTimer); }catch(_){}
   try{ clearInterval(txTimer); }catch(_){}
-  worklet=sp=null; audioCtx=null; stream=null; pingTimer=txTimer=null; txPkts=0;
+  sp=null; audioCtx=null; stream=null; pingTimer=txTimer=null; txPkts=0;
 }
 function leave(){
   if(ws){ try{ ws.close(); }catch(_){} }
@@ -146,7 +149,8 @@ async function join(){
 
     try{
       const devId = $('#micSel').value || undefined;
-      stream = await getMicStream(devId);
+      const streamLocal = await getMicStream(devId);
+      stream = streamLocal;
       const info = stream.getAudioTracks()[0]?.getSettings?.() || {};
       log(`🎙️ mic：${(stream.getAudioTracks()[0]?.label)||'未知'} | 設定：${JSON.stringify(info)}`);
     }catch(e){ log(`❌ 取得麥克風失敗：${e}`); return; }
@@ -154,56 +158,8 @@ async function join(){
     audioCtx = new (window.AudioContext||window.webkitAudioContext)({sampleRate:48000});
     await audioCtx.resume().catch(()=>{});
 
-    try{
-      if (audioCtx.audioWorklet) {
-        const blobURL = URL.createObjectURL(new Blob([`
-          class ResampleWorklet extends AudioWorkletProcessor {
-            constructor(){ super(); this.srcRate=sampleRate; this.dstRate=16000; }
-            process(inputs){
-              const i=inputs[0]; if(!i||!i[0]) return true;
-              const x=i[0]; const ratio=this.srcRate/this.dstRate;
-              const outLen=Math.floor(x.length/ratio);
-              const pcm=new Int16Array(outLen);
-              for(let k=0;k<outLen;k++){
-                const pos=(k*ratio)|0; let s=x[pos];
-                s=Math.max(-1,Math.min(1,s)); pcm[k]=s<0?s*0x8000:s*0x7FFF;
-              }
-              for(let off=0; off<pcm.length; off+=320){
-                const sl=pcm.subarray(off, off+320);
-                if(sl.length===320) this.port.postMessage(sl.buffer,[sl.buffer]);
-              }
-              return true;
-            }
-          }
-          registerProcessor('resample-worklet', ResampleWorklet);
-        `], {type:'application/javascript'}));
-        await audioCtx.audioWorklet.addModule(blobURL);
-
-        const source   = audioCtx.createMediaStreamSource(stream);
-        const zeroGain = audioCtx.createGain(); zeroGain.gain.value = 0;
-        worklet = new AudioWorkletNode(audioCtx, 'resample-worklet');
-
-        let sent=0;
-        worklet.port.onmessage = (e)=>{
-          sent++; txPkts++;
-          if(!$('#mute').checked && ws && ws.readyState===1){
-            ws.send(e.data);
-          }
-        };
-
-        source.connect(worklet); worklet.connect(zeroGain); zeroGain.connect(audioCtx.destination);
-        log(`✅ Worklet 已啟用（ctxRate=${audioCtx.sampleRate}Hz）`);
-
-        setTimeout(()=>{ if(sent===0){ log("⚠️ Worklet 無送包，改 ScriptProcessor"); try{ worklet.disconnect(); }catch(_){ } fallbackScriptProcessor(source); } }, 700);
-      } else {
-        const source = audioCtx.createMediaStreamSource(stream);
-        await fallbackScriptProcessor(source);
-      }
-    }catch(e){
-      const source = audioCtx.createMediaStreamSource(stream);
-      log(`⚠️ Worklet 失敗：${e}`);
-      await fallbackScriptProcessor(source);
-    }
+    const source = audioCtx.createMediaStreamSource(stream);
+    await fallbackScriptProcessor(source);
 
     txTimer = setInterval(()=>{ $('#tx').textContent = `TX: ${txPkts} pkt/s`; txPkts=0; }, 1000);
     $('#join').disabled=true; $('#leave').disabled=false;
@@ -212,10 +168,9 @@ async function join(){
 
   ws.onmessage = async (ev)=>{
     if(ev.data instanceof ArrayBuffer){
-      // 伺服器只會傳譯音 MP3，而且不會傳給發話者本人
+      // 伺服器只會送譯音 MP3，而且不會發回給說話者本人
       const buf = ev.data;
-      const mime = sniffMime(buf);
-      const blob = new Blob([buf],{type:mime});
+      const blob = new Blob([buf],{type:'audio/mpeg'});
       const url  = URL.createObjectURL(blob);
       const a = new Audio(url);
       a.autoplay = true;
@@ -223,7 +178,7 @@ async function join(){
         try { await a.setSinkId($('#outSel').value); } catch(e){ log(`⚠️ 設定輸出失敗：${e}`); }
       }
       a.onended = ()=>{ URL.revokeObjectURL(url); };
-      a.play().catch(err=>{ log(`⚠️ 自動播放被擋：${err}`); });
+      a.play().catch(()=>{});
       return;
     }
     try{
@@ -233,31 +188,40 @@ async function join(){
       if(o.type==="final") log(`✅ ${o.from}（${o.dir}）\n原文：${o.text}\n翻譯：${o.mt}`);
       if(o.type==="mute")  log(`🔇 ${o.name} ${o.muted?"已靜音":"取消靜音"}`);
       if(o.type==="error") log(`❌ ${o.msg}`);
-      if(o.type==="tts_info") log(`ℹ️ ${o.from} TTS bytes=${o.bytes}`);
-      // ❌ 不處理任何 tts_client（自己端不朗讀）
+      if(o.type==="tts_info") log(`🎧 MP3 bytes=${o.bytes} from ${o.from}`);
+      // 只對本人：立刻本地朗讀
+      if(o.type==="tts_client"){
+        speakNow(o.text, o.lang);
+      }
     }catch(_){}
   };
 
   ws.onclose = ()=>{ log("連線關閉"); leave(); };
 }
 
-function sniffMime(buf){
-  if (buf.byteLength >= 12){
-    const dv = new DataView(buf);
-    const riff = String.fromCharCode(dv.getUint8(0),dv.getUint8(1),dv.getUint8(2),dv.getUint8(3));
-    const wave = String.fromCharCode(dv.getUint8(8),dv.getUint8(9),dv.getUint8(10),dv.getUint8(11));
-    if (riff === 'RIFF' && wave === 'WAVE') return 'audio/wav';
-  }
-  return 'audio/mpeg';
+/* 本地即時朗讀：只朗讀譯文（中文或韓文） */
+let voices = [];
+function loadVoices(){ voices = window.speechSynthesis.getVoices() || []; }
+if ('speechSynthesis' in window){
+  loadVoices();
+  window.speechSynthesis.onvoiceschanged = loadVoices;
+}
+function speakNow(text, lang){
+  if (!('speechSynthesis' in window)) { log("⚠️ 瀏覽器不支援朗讀"); return; }
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = (lang==="ko" ? "ko-KR" : "zh-TW");
+  const cand = voices.filter(v => v.lang && v.lang.toLowerCase().startsWith(lang==="ko"?"ko":"zh"));
+  if (cand.length) u.voice = cand[0];
+  u.rate = 1.0; u.pitch = 1.0; u.volume = 1.0;
+  window.speechSynthesis.cancel(); // 避免排隊
+  window.speechSynthesis.speak(u);
 }
 
 $('#join').onclick = join;
 $('#leave').onclick = leave;
 $('#mute').onchange = ()=>{ if(ws && ws.readyState===1) ws.send(JSON.stringify({type:'mute', value:$('#mute').checked})); };
-
 $('#micSel').onchange = async ()=>{ currentMicId = $('#micSel').value || ""; await refreshDevices(); };
 $('#outSel').onchange = ()=>{ currentOutId = $('#outSel').value || ""; };
-
 navigator.mediaDevices.addEventListener('devicechange', refreshDevices);
 (async ()=>{ try{ await navigator.mediaDevices.getUserMedia({audio:true}); }catch(_){ } await refreshDevices(); })();
 </script>
