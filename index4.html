@@ -50,13 +50,12 @@
   <div class="logs" id="logs"></div>
 
 <script>
-// 讀網址參數 ?host=xxxx.trycloudflare.com
+// 讀網址參數 ?host=xxxx.trycloudflare.com；若沒帶，用 DEFAULT_HOST（記得改）
 function getHostFromQuery(){
   const u = new URL(location.href);
   return (u.searchParams.get("host") || "").trim();
 }
-// 預設主機（你也可直接改這裡）
-const DEFAULT_HOST = "performances-swaziland-fortune-brunswick.trycloudflare.com";
+const DEFAULT_HOST = "performances-swaziland-fortune-brunswick.trycloudflare.com"; // 可手動改成你這次的
 const TUNNEL_HOST = "https://" + (getHostFromQuery() || DEFAULT_HOST);
 
 let ws=null, audioCtx=null, sp=null, stream=null, pingTimer=null, txTimer=null;
@@ -120,7 +119,7 @@ async function fallbackScriptProcessor(source){
       if(s>1) s=1; if(s<-1) s=-1;
       pcm[i]=s<0?s*0x8000:s*0x7FFF;
     }
-    const pkt=320;
+    const pkt=320; // 20ms@16k
     for(let off=0; off<pcm.length; off+=pkt){
       const sl=pcm.subarray(off, off+pkt);
       if(sl.length===pkt){
@@ -191,7 +190,7 @@ async function join(){
       if(o.type==="final") log(`✅ ${o.from}（${o.dir}）\n原文：${o.text}\n翻譯：${o.mt}`);
       if(o.type==="mute")  log(`🔇 ${o.name} ${o.muted?"已靜音":"取消靜音"}`);
       if(o.type==="error") log(`❌ ${o.msg}`);
-      // ❌ 不處理任何 tts_client / speechSynthesis（自己端不朗讀）
+      // ❌ 不做任何 speechSynthesis（自己端完全不朗讀）
     }catch(_){}
   };
 
