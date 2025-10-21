@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>中↔韓 同聲傳譯｜只播譯音（自己不播放）</title>
+<title>中↔韓 同聲傳譯｜只播譯音（本人不回放）</title>
 <style>
   body{font-family:system-ui,-apple-system,"Noto Sans TC","Microsoft JhengHei",Arial;padding:20px;max-width:920px;margin:auto}
   .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
@@ -16,7 +16,7 @@
   .hint{color:#666;font-size:13px}
 </style>
 <body>
-  <h2>中↔韓 同聲傳譯（只播放譯音｜自己完全不播放）</h2>
+  <h2>中↔韓 同聲傳譯（只播放「翻譯後的機器語音」；從不播放任何人聲）</h2>
 
   <div class="row">
     <label>名稱</label>
@@ -42,23 +42,31 @@
   <div class="row" style="margin-top:10px">
     <label for="micSel">輸入裝置</label>
     <select id="micSel"></select>
-    <label for="outSel">輸出裝置（播放他人譯音 MP3）</label>
+    <label for="outSel">輸出裝置（播放別人的「譯音 MP3」）</label>
     <select id="outSel"></select>
-    <span class="hint">伺服器只會傳譯音 MP3；發話者自己不會收到音訊。</span>
+    <span class="hint">本頁永遠不會播放人聲；只有「翻譯後的機器語音」會播放，而且發話者本人不會聽到自己那一句。</span>
   </div>
 
   <div class="logs" id="logs"></div>
 
 <script>
-const TUNNEL_HOST = "https://bands-powerful-fda-captain.trycloudflare.com";
-
-let ws=null, audioCtx=null, worklet=null, sp=null, stream=null, pingTimer=null, txTimer=null;
+let ws=null, audioCtx=null, sp=null, stream=null, pingTimer=null, txTimer=null;
 let txPkts=0;
 
 let devicesCache=[]; let currentMicId=""; let currentOutId="";
 
 const $ = (s)=>document.querySelector(s);
 const log = (s)=>{ const el=$('#logs'); el.textContent+=s+"\n"; el.scrollTop=el.scrollHeight; };
+
+function requireHost(){
+  const host = new URLSearchParams(location.search).get('host') || "";
+  if(!host){
+    log("❌ 請在網址後加上 ?host=<你的 trycloudflare 主機> 才能連線，例如：?host=performances-xxxx.trycloudflare.com");
+    $('#join').disabled = true;
+    return null;
+  }
+  return host.replace(/^https?:\/\//,'').replace(/\/+$/,'');
+}
 
 async function refreshDevices(){
   devicesCache = await navigator.mediaDevices.enumerateDevices();
@@ -86,18 +94,19 @@ async function getMicStream(deviceId){
 }
 
 function cleanupAudio(){
-  try{ worklet && worklet.disconnect(); }catch(_){}
   try{ sp && sp.disconnect(); }catch(_){}
   try{ stream && stream.getTracks().forEach(t=>t.stop()); }catch(_){}
   try{ audioCtx && audioCtx.close(); }catch(_){}
   try{ clearInterval(pingTimer); }catch(_){}
   try{ clearInterval(txTimer); }catch(_){}
-  worklet=sp=null; audioCtx=null; stream=null; pingTimer=txTimer=null; txPkts=0;
+  sp=null; audioCtx=null; stream=null; pingTimer=txTimer=null; txPkts=0;
 }
+
 function leave(){
   if(ws){ try{ ws.close(); }catch(_){ } }
   cleanupAudio();
-  $('#join').disabled=false; $('#leave').disabled=true;
+  $('#join').disabled = false;
+  $('#leave').disabled = true;
   $('#status').textContent="未連線"; $('#status').classList.remove('now');
 }
 
@@ -125,18 +134,23 @@ async function fallbackScriptProcessor(source){
       }
     }
   };
+  // 音量=0，避免任何本機回放
   source.connect(sp); sp.connect(zeroGain); zeroGain.connect(audioCtx.destination);
   log(`✅ ScriptProcessor 已啟用（ctxRate=${audioCtx.sampleRate}Hz）`);
 }
 
 async function join(){
+  const host = requireHost();
+  if(!host) return;
+
   try{ await navigator.mediaDevices.getUserMedia({audio:true}); }catch(_){}
   await refreshDevices();
 
   const name = ($('#name').value || 'Guest').trim().slice(0,40);
   const srcLang = $('#srcLang').value;
 
-  ws = new WebSocket(`${TUNNEL_HOST.replace('https://','wss://')}/ws`);
+  const WS_URL = `wss://${host}/ws`;
+  ws = new WebSocket(WS_URL);
   ws.binaryType = 'arraybuffer';
 
   ws.onopen = async ()=>{
@@ -152,7 +166,6 @@ async function join(){
 
     audioCtx = new (window.AudioContext||window.webkitAudioContext)({sampleRate:48000});
     await audioCtx.resume().catch(()=>{});
-
     const source = audioCtx.createMediaStreamSource(stream);
     await fallbackScriptProcessor(source);
 
@@ -164,10 +177,8 @@ async function join(){
 
   ws.onmessage = async (ev)=>{
     if(ev.data instanceof ArrayBuffer){
-      // 伺服器現在只會傳譯音 MP3，且不會回送給發話者
-      const buf = ev.data;
-      const mime = sniffMime(buf);
-      const blob = new Blob([buf],{type:mime});
+      // 後端只傳「翻譯後的 MP3」，且不會回送給發話者本人
+      const blob = new Blob([ev.data], {type:'audio/mpeg'});
       const url  = URL.createObjectURL(blob);
       const a = new Audio(url);
       a.autoplay = true;
@@ -185,22 +196,11 @@ async function join(){
       if(o.type==="final") log(`✅ ${o.from}（${o.dir}）\n原文：${o.text}\n翻譯：${o.mt}`);
       if(o.type==="mute")  log(`🔇 ${o.name} ${o.muted?"已靜音":"取消靜音"}`);
       if(o.type==="error") log(`❌ ${o.msg}`);
-      // 不處理 tts_client（後端已不送）
+      // 不處理任何 tts_client（前端永不做本地 TTS）
     }catch(_){}
   };
 
   ws.onclose = ()=>{ log("連線關閉"); leave(); };
-}
-
-function sniffMime(buf){
-  // 雖然現在只有 MP3，為了相容性保留 WAV 檢測
-  if (buf.byteLength >= 12){
-    const dv = new DataView(buf);
-    const riff = String.fromCharCode(dv.getUint8(0),dv.getUint8(1),dv.getUint8(2),dv.getUint8(3));
-    const wave = String.fromCharCode(dv.getUint8(8),dv.getUint8(9),dv.getUint8(10),dv.getUint8(11));
-    if (riff === 'RIFF' && wave === 'WAVE') return 'audio/wav';
-  }
-  return 'audio/mpeg';
 }
 
 $('#join').onclick = join;
