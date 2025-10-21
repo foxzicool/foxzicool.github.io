@@ -19,6 +19,11 @@
   <h2>中↔韓 同聲傳譯（只播放譯音｜自己完全不播放）</h2>
 
   <div class="row">
+    <label>Cloudflared 主機（不含 https://）</label>
+    <input id="host" type="text" style="min-width:420px" placeholder="例如 performances-xxxx.trycloudflare.com" />
+  </div>
+
+  <div class="row" style="margin-top:10px">
     <label>名稱</label>
     <input id="name" type="text" value="Public" />
     <label>來源語言</label>
@@ -50,13 +55,26 @@
   <div class="logs" id="logs"></div>
 
 <script>
-// 讀網址參數 ?host=xxxx.trycloudflare.com；若沒帶，用 DEFAULT_HOST（記得改）
+// 讀網址參數 ?host=xxxx.trycloudflare.com
 function getHostFromQuery(){
   const u = new URL(location.href);
   return (u.searchParams.get("host") || "").trim();
 }
-const DEFAULT_HOST = "performances-swaziland-fortune-brunswick.trycloudflare.com"; // 可手動改成你這次的
-const TUNNEL_HOST = "https://" + (getHostFromQuery() || DEFAULT_HOST);
+function saveHost(h){ try{ localStorage.setItem("cf_host", h||""); }catch(_){ } }
+function loadHost(){ try{ return localStorage.getItem("cf_host")||""; }catch(_){ return ""; } }
+
+// Autoplay 解鎖（避免瀏覽器擋自動播放）
+async function unlockPlayback(){
+  try{
+    const ctx = new (window.AudioContext||window.webkitAudioContext)();
+    const buf = ctx.createBuffer(1, 1, ctx.sampleRate);
+    const src = ctx.createBufferSource();
+    src.buffer = buf; src.connect(ctx.destination); src.start(0);
+    await ctx.resume();
+    setTimeout(()=>{ try{ ctx.close(); }catch(_){ } }, 300);
+    console.log("🔓 Playback unlocked");
+  }catch(e){ console.log("⚠️ unlockPlayback 失敗：", e); }
+}
 
 let ws=null, audioCtx=null, sp=null, stream=null, pingTimer=null, txTimer=null;
 let txPkts=0;
@@ -100,7 +118,7 @@ function cleanupAudio(){
   sp=null; audioCtx=null; stream=null; pingTimer=txTimer=null; txPkts=0;
 }
 function leave(){
-  if(ws){ try{ ws.close(); }catch(_){} }
+  if(ws){ try{ ws.close(); }catch(_){ } }
   cleanupAudio();
   $('#join').disabled=false; $('#leave').disabled=true;
   $('#status').textContent="未連線"; $('#status').classList.remove('now');
@@ -119,7 +137,7 @@ async function fallbackScriptProcessor(source){
       if(s>1) s=1; if(s<-1) s=-1;
       pcm[i]=s<0?s*0x8000:s*0x7FFF;
     }
-    const pkt=320; // 20ms@16k
+    const pkt=320;
     for(let off=0; off<pcm.length; off+=pkt){
       const sl=pcm.subarray(off, off+pkt);
       if(sl.length===pkt){
@@ -134,13 +152,34 @@ async function fallbackScriptProcessor(source){
   log(`✅ ScriptProcessor 已啟用（ctxRate=${audioCtx.sampleRate}Hz）`);
 }
 
+function sniffMime(buf){
+  // 伺服器只送 MP3，但保留 WAV 檢測相容
+  if (buf.byteLength >= 12){
+    const dv = new DataView(buf);
+    const riff = String.fromCharCode(dv.getUint8(0),dv.getUint8(1),dv.getUint8(2),dv.getUint8(3));
+    const wave = String.fromCharCode(dv.getUint8(8),dv.getUint8(9),dv.getUint8(10),dv.getUint8(11));
+    if (riff === 'RIFF' && wave === 'WAVE') return 'audio/wav';
+  }
+  return 'audio/mpeg';
+}
+
 async function join(){
+  // host 來源：URL ?host=、輸入框、或 localStorage
+  let host = getHostFromQuery() || ($('#host').value||"").trim() || loadHost();
+  if(!host){
+    alert("請填入 Cloudflared 主機（例如 performances-xxxx.trycloudflare.com），或在網址後加上 ?host=...");
+    return;
+  }
+  $('#host').value = host; saveHost(host);
+
   try{ await navigator.mediaDevices.getUserMedia({audio:true}); }catch(_){}
   await refreshDevices();
+  await unlockPlayback();
 
   const name = ($('#name').value || 'Guest').trim().slice(0,40);
   const srcLang = $('#srcLang').value;
 
+  const TUNNEL_HOST = "https://" + host;
   ws = new WebSocket(`${TUNNEL_HOST.replace('https://','wss://')}/ws`);
   ws.binaryType = 'arraybuffer';
 
@@ -171,6 +210,7 @@ async function join(){
     if(ev.data instanceof ArrayBuffer){
       // 伺服器「只會傳譯音 MP3」，且不會回送給發話者本人
       const buf = ev.data;
+      log(`🔊 收到譯音 MP3，${buf.byteLength} bytes`);
       const mime = sniffMime(buf);
       const blob = new Blob([buf],{type:mime});
       const url  = URL.createObjectURL(blob);
@@ -179,8 +219,9 @@ async function join(){
       if (typeof a.setSinkId === 'function' && $('#outSel').value){
         try { await a.setSinkId($('#outSel').value); } catch(e){ log(`⚠️ 設定輸出失敗：${e}`); }
       }
+      try{ await a.play(); }
+      catch(err){ log(`❌ 瀏覽器阻擋自動播放：${err}。請點一下頁面或允許此網站自動播放。`); }
       a.onended = ()=>{ URL.revokeObjectURL(url); };
-      a.play().catch(()=>{});
       return;
     }
     try{
@@ -190,22 +231,12 @@ async function join(){
       if(o.type==="final") log(`✅ ${o.from}（${o.dir}）\n原文：${o.text}\n翻譯：${o.mt}`);
       if(o.type==="mute")  log(`🔇 ${o.name} ${o.muted?"已靜音":"取消靜音"}`);
       if(o.type==="error") log(`❌ ${o.msg}`);
-      // ❌ 不做任何 speechSynthesis（自己端完全不朗讀）
+      if(o.type==="tts_info") log(`ℹ️ ${o.from} TTS bytes=${o.bytes}`);
+      // ❌ 不處理任何 tts_client / speechSynthesis（自己端不朗讀）
     }catch(_){}
   };
 
   ws.onclose = ()=>{ log("連線關閉"); leave(); };
-}
-
-function sniffMime(buf){
-  // 保留 WAV 檢測（雖然伺服器只送 MP3）
-  if (buf.byteLength >= 12){
-    const dv = new DataView(buf);
-    const riff = String.fromCharCode(dv.getUint8(0),dv.getUint8(1),dv.getUint8(2),dv.getUint8(3));
-    const wave = String.fromCharCode(dv.getUint8(8),dv.getUint8(9),dv.getUint8(10),dv.getUint8(11));
-    if (riff === 'RIFF' && wave === 'WAVE') return 'audio/wav';
-  }
-  return 'audio/mpeg';
 }
 
 $('#join').onclick = join;
@@ -213,6 +244,12 @@ $('#leave').onclick = leave;
 $('#mute').onchange = ()=>{ if(ws && ws.readyState===1) ws.send(JSON.stringify({type:'mute', value:$('#mute').checked})); };
 $('#micSel').onchange = async ()=>{ currentMicId = $('#micSel').value || ""; await refreshDevices(); };
 $('#outSel').onchange = ()=>{ currentOutId = $('#outSel').value || ""; };
+
+(function boot(){
+  // 預填 host：先讀 ?host=，沒有就用 localStorage
+  const hq = getHostFromQuery() || loadHost();
+  if(hq) $('#host').value = hq;
+})();
 navigator.mediaDevices.addEventListener('devicechange', refreshDevices);
 (async ()=>{ try{ await navigator.mediaDevices.getUserMedia({audio:true}); }catch(_){ } await refreshDevices(); })();
 </script>
