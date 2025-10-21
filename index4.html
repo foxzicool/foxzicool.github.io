@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>中↔韓 同聲傳譯｜自己端只聽機器人；他人聽MP3</title>
+<title>中↔韓 同聲傳譯｜自己端只聽機器人｜他人聽MP3</title>
 <style>
   body{font-family:system-ui,-apple-system,"Noto Sans TC","Microsoft JhengHei",Arial;padding:20px;max-width:920px;margin:auto}
   .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
@@ -44,7 +44,7 @@
     <select id="micSel"></select>
     <label for="outSel">輸出裝置（播放他人譯音 MP3）</label>
     <select id="outSel"></select>
-    <span class="hint">網址可加 ?host=你的 trycloudflare 主機，例如：?host=formed-xxx.trycloudflare.com</span>
+    <span class="hint">伺服器只會傳譯音 MP3；發話者自己不會收到音訊，僅本地朗讀。</span>
   </div>
 
   <div class="logs" id="logs"></div>
@@ -54,11 +54,10 @@ function getHostFromQuery(){
   const u = new URL(location.href);
   return (u.searchParams.get("host") || "").trim();
 }
-// 預設主機（你可直接改這裡，也可用 ?host= 覆蓋）
-const DEFAULT_HOST = "formed-pavilion-practitioners-marks.trycloudflare.com";
+const DEFAULT_HOST = "formed-pavilion-practitioners-marks.trycloudflare.com"; // 每次 cloudflared 變更，改這行或用 ?host=
 const TUNNEL_HOST = "https://" + (getHostFromQuery() || DEFAULT_HOST);
 
-let ws=null, audioCtx=null, sp=null, stream=null, pingTimer=null, txTimer=null;
+let ws=null, audioCtx=null, worklet=null, sp=null, stream=null, pingTimer=null, txTimer=null;
 let txPkts=0;
 
 let devicesCache=[]; let currentMicId=""; let currentOutId="";
@@ -92,12 +91,13 @@ async function getMicStream(deviceId){
 }
 
 function cleanupAudio(){
+  try{ worklet && worklet.disconnect(); }catch(_){}
   try{ sp && sp.disconnect(); }catch(_){}
   try{ stream && stream.getTracks().forEach(t=>t.stop()); }catch(_){}
   try{ audioCtx && audioCtx.close(); }catch(_){}
   try{ clearInterval(pingTimer); }catch(_){}
   try{ clearInterval(txTimer); }catch(_){}
-  sp=null; audioCtx=null; stream=null; pingTimer=txTimer=null; txPkts=0;
+  worklet=sp=null; audioCtx=null; stream=null; pingTimer=txTimer=null; txPkts=0;
 }
 function leave(){
   if(ws){ try{ ws.close(); }catch(_){} }
@@ -119,7 +119,7 @@ async function fallbackScriptProcessor(source){
       if(s>1) s=1; if(s<-1) s=-1;
       pcm[i]=s<0?s*0x8000:s*0x7FFF;
     }
-    const pkt=320; // 20ms @ 16k
+    const pkt=320;
     for(let off=0; off<pcm.length; off+=pkt){
       const sl=pcm.subarray(off, off+pkt);
       if(sl.length===pkt){
@@ -150,7 +150,8 @@ async function join(){
 
     try{
       const devId = $('#micSel').value || undefined;
-      stream = await getMicStream(devId);
+      const streamLocal = await getMicStream(devId);
+      stream = streamLocal;
       const info = stream.getAudioTracks()[0]?.getSettings?.() || {};
       log(`🎙️ mic：${(stream.getAudioTracks()[0]?.label)||'未知'} | 設定：${JSON.stringify(info)}`);
     }catch(e){ log(`❌ 取得麥克風失敗：${e}`); return; }
@@ -158,8 +159,57 @@ async function join(){
     audioCtx = new (window.AudioContext||window.webkitAudioContext)({sampleRate:48000});
     await audioCtx.resume().catch(()=>{});
 
-    const source = audioCtx.createMediaStreamSource(stream);
-    await fallbackScriptProcessor(source);
+    // 優先用 Worklet（更低延遲），失敗退回 ScriptProcessor
+    try{
+      if (audioCtx.audioWorklet) {
+        const blobURL = URL.createObjectURL(new Blob([`
+          class ResampleWorklet extends AudioWorkletProcessor {
+            constructor(){ super(); this.srcRate=sampleRate; this.dstRate=16000; }
+            process(inputs){
+              const i=inputs[0]; if(!i||!i[0]) return true;
+              const x=i[0]; const ratio=this.srcRate/this.dstRate;
+              const outLen=Math.floor(x.length/ratio);
+              const pcm=new Int16Array(outLen);
+              for(let k=0;k<outLen;k++){
+                const pos=(k*ratio)|0; let s=x[pos];
+                s=Math.max(-1,Math.min(1,s)); pcm[k]=s<0?s*0x8000:s*0x7FFF;
+              }
+              for(let off=0; off<pcm.length; off+=320){
+                const sl=pcm.subarray(off, off+320);
+                if(sl.length===320) this.port.postMessage(sl.buffer,[sl.buffer]);
+              }
+              return true;
+            }
+          }
+          registerProcessor('resample-worklet', ResampleWorklet);
+        `], {type:'application/javascript'}));
+        await audioCtx.audioWorklet.addModule(blobURL);
+
+        const source   = audioCtx.createMediaStreamSource(stream);
+        const zeroGain = audioCtx.createGain(); zeroGain.gain.value = 0;
+        worklet = new AudioWorkletNode(audioCtx, 'resample-worklet');
+
+        let sent=0;
+        worklet.port.onmessage = (e)=>{
+          sent++; txPkts++;
+          if(!$('#mute').checked && ws && ws.readyState===1){
+            ws.send(e.data);
+          }
+        };
+
+        source.connect(worklet); worklet.connect(zeroGain); zeroGain.connect(audioCtx.destination);
+        log(`✅ Worklet 已啟用（ctxRate=${audioCtx.sampleRate}Hz）`);
+
+        setTimeout(()=>{ if(sent===0){ log("⚠️ Worklet 無送包，改 ScriptProcessor"); try{ worklet.disconnect(); }catch(_){ } fallbackScriptProcessor(source); } }, 700);
+      } else {
+        const source = audioCtx.createMediaStreamSource(stream);
+        await fallbackScriptProcessor(source);
+      }
+    }catch(e){
+      const source = audioCtx.createMediaStreamSource(stream);
+      log(`⚠️ Worklet 失敗：${e}`);
+      await fallbackScriptProcessor(source);
+    }
 
     txTimer = setInterval(()=>{ $('#tx').textContent = `TX: ${txPkts} pkt/s`; txPkts=0; }, 1000);
     $('#join').disabled=true; $('#leave').disabled=false;
@@ -168,7 +218,7 @@ async function join(){
 
   ws.onmessage = async (ev)=>{
     if(ev.data instanceof ArrayBuffer){
-      // 從伺服器來的永遠是 MP3（譯音），而且不會回送給發話者本人
+      // 伺服器只會送譯音 MP3，而且不會發回給說話者本人
       const buf = ev.data;
       const blob = new Blob([buf],{type:'audio/mpeg'});
       const url  = URL.createObjectURL(blob);
@@ -189,8 +239,7 @@ async function join(){
       if(o.type==="mute")  log(`🔇 ${o.name} ${o.muted?"已靜音":"取消靜音"}`);
       if(o.type==="error") log(`❌ ${o.msg}`);
       if(o.type==="tts_info") log(`🎧 MP3 bytes=${o.bytes} from ${o.from}`);
-
-      // 只對「本人」送來：立即用 Web Speech 本地朗讀
+      // 只對本人：立刻本地朗讀
       if(o.type==="tts_client"){
         speakNow(o.text, o.lang);
       }
@@ -200,7 +249,7 @@ async function join(){
   ws.onclose = ()=>{ log("連線關閉"); leave(); };
 }
 
-/* 本地即時朗讀：只朗讀譯文（中文或韓文），你不會聽到任何人的原音 */
+/* 本地即時朗讀：只朗讀譯文（中文或韓文） */
 let voices = [];
 function loadVoices(){ voices = window.speechSynthesis.getVoices() || []; }
 if ('speechSynthesis' in window){
