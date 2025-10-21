@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>中↔韓 同聲傳譯｜他人可聽譯音（自己不播放）</title>
+<title>中↔韓 同聲傳譯（他人可聽譯音｜自己不播放）</title>
 <style>
   body{font-family:system-ui,-apple-system,"Noto Sans TC","Microsoft JhengHei",Arial;padding:20px;max-width:920px;margin:auto}
   .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
@@ -51,7 +51,7 @@
 
 <script>
 const TUNNEL_HOST = "https://port-yea-myrtle-lib.trycloudflare.com";
-
+let myName = "";
 let ws=null, audioCtx=null, worklet=null, sp=null, stream=null, pingTimer=null, txTimer=null;
 let txPkts=0;
 let devicesCache=[]; let currentMicId=""; let currentOutId="";
@@ -131,7 +131,7 @@ async function join(){
   try{ await navigator.mediaDevices.getUserMedia({audio:true}); }catch(_){}
   await refreshDevices();
 
-  const name = ($('#name').value || 'Guest').trim().slice(0,40);
+  myName = ($('#name').value || 'Guest').trim().slice(0,40);
   const srcLang = $('#srcLang').value;
 
   ws = new WebSocket(`${TUNNEL_HOST.replace('https://','wss://')}/ws`);
@@ -139,7 +139,7 @@ async function join(){
 
   ws.onopen = async ()=>{
     $('#status').textContent="已連線"; $('#status').classList.add('now');
-    ws.send(JSON.stringify({name, src_lang: srcLang}));
+    ws.send(JSON.stringify({name: myName, src_lang: srcLang}));
 
     try{
       const devId = $('#micSel').value || undefined;
@@ -151,56 +151,8 @@ async function join(){
     audioCtx = new (window.AudioContext||window.webkitAudioContext)({sampleRate:48000});
     await audioCtx.resume().catch(()=>{});
 
-    try{
-      if (audioCtx.audioWorklet) {
-        const blobURL = URL.createObjectURL(new Blob([`
-          class ResampleWorklet extends AudioWorkletProcessor {
-            constructor(){ super(); this.srcRate=sampleRate; this.dstRate=16000; }
-            process(inputs){
-              const i=inputs[0]; if(!i||!i[0]) return true;
-              const x=i[0]; const ratio=this.srcRate/this.dstRate;
-              const outLen=Math.floor(x.length/ratio);
-              const pcm=new Int16Array(outLen);
-              for(let k=0;k<outLen;k++){
-                const pos=(k*ratio)|0; let s=x[pos];
-                s=Math.max(-1,Math.min(1,s)); pcm[k]=s<0?s*0x8000:s*0x7FFF;
-              }
-              for(let off=0; off<pcm.length; off+=320){
-                const sl=pcm.subarray(off, off+320);
-                if(sl.length===320) this.port.postMessage(sl.buffer,[sl.buffer]);
-              }
-              return true;
-            }
-          }
-          registerProcessor('resample-worklet', ResampleWorklet);
-        `], {type:'application/javascript'}));
-        await audioCtx.audioWorklet.addModule(blobURL);
-
-        const source   = audioCtx.createMediaStreamSource(stream);
-        const zeroGain = audioCtx.createGain(); zeroGain.gain.value = 0;
-        worklet = new AudioWorkletNode(audioCtx, 'resample-worklet');
-
-        let sent=0;
-        worklet.port.onmessage = (e)=>{
-          sent++; txPkts++;
-          if(!$('#mute').checked && ws && ws.readyState===1){
-            ws.send(e.data);
-          }
-        };
-
-        source.connect(worklet); worklet.connect(zeroGain); zeroGain.connect(audioCtx.destination);
-        log(`✅ Worklet 已啟用（ctxRate=${audioCtx.sampleRate}Hz）`);
-
-        setTimeout(()=>{ if(sent===0){ log("⚠️ Worklet 無送包，改 ScriptProcessor"); try{ worklet.disconnect(); }catch(_){ } fallbackScriptProcessor(source); } }, 700);
-      } else {
-        const source = audioCtx.createMediaStreamSource(stream);
-        await fallbackScriptProcessor(source);
-      }
-    }catch(e){
-      const source = audioCtx.createMediaStreamSource(stream);
-      log(`⚠️ Worklet 失敗：${e}`);
-      await fallbackScriptProcessor(source);
-    }
+    const source = audioCtx.createMediaStreamSource(stream);
+    await fallbackScriptProcessor(source);
 
     txTimer = setInterval(()=>{ $('#tx').textContent = `TX: ${txPkts} pkt/s`; txPkts=0; }, 1000);
     $('#join').disabled=true; $('#leave').disabled=false;
@@ -209,6 +161,7 @@ async function join(){
 
   ws.onmessage = async (ev)=>{
     if(ev.data instanceof ArrayBuffer){
+      // ❗ 伺服器目前沒附發送者ID，我們假設 TTS 只來自他人 (safe)
       const buf = ev.data;
       const mime = sniffMime(buf);
       const blob = new Blob([buf],{type:mime});
@@ -222,6 +175,7 @@ async function join(){
       a.play().catch(()=>{});
       return;
     }
+
     try{
       const o=JSON.parse(ev.data);
       if(o.type==="join")  log(`🔵 ${o.name} 加入，人數 ${o.count}`);
@@ -230,9 +184,11 @@ async function join(){
       if(o.type==="mute")  log(`🔇 ${o.name} ${o.muted?"已靜音":"取消靜音"}`);
       if(o.type==="error") log(`❌ ${o.msg}`);
 
-      // ✅ 改成「不朗讀自己端」只顯示翻譯文字
-      if(o.type==="tts_client"){
-        log(`🎧 翻譯完成（不播放）→ ${o.text}`);
+      // ✅ 自己不朗讀（也不重播），只看文字
+      if(o.type==="tts_client" && o.from !== myName){
+        log(`🎧 ${o.from} 翻譯：${o.text}`);
+      } else if (o.type==="tts_client" && o.from === myName){
+        log(`🈚 自己翻譯完成（靜音）→ ${o.text}`);
       }
     }catch(_){}
   };
