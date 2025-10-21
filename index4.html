@@ -3,190 +3,93 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>中↔韓 同聲傳譯｜音訊不回傳給發話者（4060 加速）</title>
+<title>中↔韓 同聲傳譯｜只播譯音給其他人（防回傳鏈｜4060 加速）</title>
 
-<!-- 美化樣式（不影響功能） -->
 <style>
   :root{
-    --bg: #0b1220;
-    --bg2:#0e1830;
-    --card:#0f1b33cc;
-    --muted:#8aa0c2;
-    --text:#e9f0ff;
-    --primary:#6aa7ff;
-    --primary-2:#7be2ff;
-    --accent:#c9f27b;
-    --danger:#ff6b6b;
-    --ok:#75e0a2;
-    --ring:#213454;
-    --border:#20304a;
-    --shadow: 0 10px 30px rgba(0,0,0,.35);
-    --radius: 16px;
+    --bg: #0b1220; --bg2:#0e1830; --card:#0f1b33cc; --muted:#8aa0c2; --text:#e9f0ff;
+    --primary:#6aa7ff; --primary-2:#7be2ff; --accent:#c9f27b; --danger:#ff6b6b; --ok:#75e0a2;
+    --ring:#213454; --border:#20304a; --shadow: 0 10px 30px rgba(0,0,0,.35); --radius: 16px;
   }
-
-  /* 背景動態漸層 */
   body{
     margin:0; min-height:100vh; color:var(--text);
-    font-family:ui-sans-serif, system-ui, -apple-system, "Noto Sans TC", "Microsoft JhengHei", Segoe UI, Roboto, Arial, Apple Color Emoji, Noto Color Emoji;
+    font-family:ui-sans-serif, system-ui, -apple-system, "Noto Sans TC", "Microsoft JhengHei", Segoe UI, Roboto, Arial;
     background:
       radial-gradient(1200px 600px at 10% -10%, #264b9a33, transparent 60%),
       radial-gradient(1000px 500px at 110% 10%, #1a7fb833, transparent 60%),
       linear-gradient(180deg, var(--bg), var(--bg2));
   }
-
   .wrap{ max-width:1080px; margin:0 auto; padding:28px 18px 40px; }
-
-  .hero{
-    display:flex; align-items:center; gap:14px; margin-bottom:18px;
-  }
-  .logo{
-    width:42px; height:42px; border-radius:12px;
+  .hero{ display:flex; align-items:center; gap:14px; margin-bottom:18px; }
+  .logo{ width:42px; height:42px; border-radius:12px;
     background: conic-gradient(from 220deg, var(--primary), var(--primary-2), var(--accent), var(--primary));
-    box-shadow: 0 0 0 6px #6aa7ff22, var(--shadow);
-  }
+    box-shadow: 0 0 0 6px #6aa7ff22, var(--shadow); }
   h2{ margin:0; font-size:22px; letter-spacing:.3px; }
   .subtitle{ color:var(--muted); font-size:13px; margin-top:2px; }
 
-  .card{
-    background: var(--card);
-    backdrop-filter: blur(10px);
-    border:1px solid var(--border);
-    border-radius: var(--radius);
-    box-shadow: var(--shadow);
-    padding:18px;
-  }
+  .card{ background: var(--card); backdrop-filter: blur(10px); border:1px solid var(--border);
+    border-radius: var(--radius); box-shadow: var(--shadow); padding:18px; }
 
-  /* 表單佈局 */
-  .grid{
-    display:grid; gap:12px;
-    grid-template-columns: repeat(12, 1fr);
-    align-items:center;
-  }
-  .col-2{ grid-column: span 2; }
-  .col-3{ grid-column: span 3; }
-  .col-4{ grid-column: span 4; }
-  .col-5{ grid-column: span 5; }
-  .col-6{ grid-column: span 6; }
-  .col-7{ grid-column: span 7; }
-  .col-8{ grid-column: span 8; }
-  .col-12{ grid-column: span 12; }
-
-  @media (max-width: 880px){
-    .col-2,.col-3,.col-4,.col-5,.col-6,.col-7,.col-8{ grid-column: span 12; }
-  }
+  .grid{ display:grid; gap:12px; grid-template-columns: repeat(12, 1fr); align-items:center; }
+  .col-2{grid-column:span 2}.col-3{span:3}.col-4{span:4}.col-5{span:5}.col-6{span:6}.col-12{span:12}
+  @media (max-width: 880px){ .grid>*{ grid-column: span 12 !important; } }
 
   label{ font-size:13px; color:var(--muted); display:block; margin-bottom:6px; }
-
   input[type="text"], select{
-    width:100%;
-    padding:10px 12px;
-    background:#0b1730;
-    color:var(--text);
-    border:1px solid var(--ring);
-    border-radius:12px;
-    outline:none;
-    transition: box-shadow .2s, border-color .2s, transform .05s;
-    box-shadow: inset 0 0 0 1px #ffffff07;
+    width:100%; padding:10px 12px; background:#0b1730; color:var(--text);
+    border:1px solid var(--ring); border-radius:12px; outline:none;
+    transition: box-shadow .2s, border-color .2s;
   }
-  input[type="text"]:focus, select:focus{
-    border-color: var(--primary);
-    box-shadow: 0 0 0 4px #6aa7ff22;
-  }
+  input[type="text"]:focus, select:focus{ border-color: var(--primary); box-shadow: 0 0 0 4px #6aa7ff22; }
 
-  .switches{
-    display:flex; flex-wrap:wrap; gap:12px 18px; align-items:center;
-  }
+  .switches{ display:flex; flex-wrap:wrap; gap:12px 18px; align-items:center; }
   .switches label{ display:flex; align-items:center; gap:8px; margin:0; }
-  .switches input[type="checkbox"]{
-    inline-size:18px; block-size:18px; accent-color: var(--primary);
-  }
+  .switches input[type="checkbox"]{ inline-size:18px; block-size:18px; accent-color: var(--primary); }
 
   .btns{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
   button{
-    border:1px solid var(--ring);
-    color:var(--text);
-    background:#0b1730;
-    padding:10px 14px; border-radius:12px;
-    cursor:pointer; transition:transform .05s ease, box-shadow .2s, border-color .2s, background .2s;
+    border:1px solid var(--ring); color:var(--text); background:#0b1730; padding:10px 14px; border-radius:12px;
+    cursor:pointer; transition:transform .05s, box-shadow .2s, border-color .2s, background .2s;
   }
-  button:active{ transform: translateY(1px); }
-  button[disabled]{ opacity:.5; cursor:not-allowed; }
+  button:active{ transform: translateY(1px); } button[disabled]{ opacity:.5; cursor:not-allowed; }
+  .btn-primary{ background: linear-gradient(180deg, #6aa7ff, #5b8ffb); border-color:#6aa7ffcc; color:#0b1220; font-weight:700; }
+  .btn-danger{ background: linear-gradient(180deg, #ff7b7b, #ff6262); border-color:#ff9a9a; color:#1a0c0c; font-weight:700; }
 
-  .btn-primary{
-    background: linear-gradient(180deg, #6aa7ff, #5b8ffb);
-    border-color:#6aa7ffcc;
-    box-shadow: 0 8px 18px #6aa7ff3a, inset 0 0 1px #ffffffaa;
-    color:#0b1220; font-weight:700;
-  }
-  .btn-primary:hover{ filter: brightness(1.05); }
-  .btn-danger{
-    background: linear-gradient(180deg, #ff7b7b, #ff6262);
-    border-color:#ff9a9a;
-    box-shadow: 0 8px 18px #ff6b6b33, inset 0 0 1px #ffffffaa;
-    color:#1a0c0c; font-weight:700;
-  }
+  .status{ font-size:12px; padding:6px 10px; border-radius:999px; border:1px solid var(--ring);
+    background:#0b1730; color:var(--muted); display:inline-flex; align-items:center; gap:8px; }
+  .dot{ width:8px; height:8px; border-radius:50%; background:#8aa0c2; box-shadow: 0 0 0 4px #8aa0c210; }
+  .now .dot{ background: var(--ok); box-shadow: 0 0 0 4px #75e0a220; } .now{ color:var(--ok)!important; border-color:#2d5a4a; }
 
-  .status{
-    font-size:12px; padding:6px 10px;
-    border-radius:999px; border:1px solid var(--ring);
-    background:#0b1730; color:var(--muted);
-    display:inline-flex; align-items:center; gap:8px;
-  }
-  .dot{
-    width:8px; height:8px; border-radius:50%; background:#8aa0c2;
-    box-shadow: 0 0 0 4px #8aa0c210;
-  }
-  .now .dot{ background: var(--ok); box-shadow: 0 0 0 4px #75e0a220; }
-  .now{ color:var(--ok)!important; border-color:#2d5a4a; }
+  .tx{ font-family: ui-monospace, Menlo, Consolas, monospace; font-size:12px; color:#cfe2ff; background:#0b1730;
+    padding:6px 10px; border-radius:10px; border:1px solid var(--ring); }
 
-  .tx{
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-    font-size:12px; color:#cfe2ff; background:#0b1730; padding:6px 10px; border-radius:10px; border:1px solid var(--ring);
-  }
+  .logs{ margin-top:16px; padding:14px 14px 18px; border:1px solid var(--ring); border-radius:14px;
+    background: radial-gradient(400px 180px at 10% -10%, #6aa7ff10, transparent 50%), #071226;
+    height:390px; overflow:auto; font-size:13.5px; line-height:1.6; box-shadow: inset 0 0 0 1px #ffffff05, var(--shadow);
+    white-space:pre-wrap; }
+  .logs::-webkit-scrollbar{ width:10px; height:10px; }
+  .logs::-webkit-scrollbar-thumb{ background: linear-gradient(180deg, #3a5f9d, #2d4e86); border-radius:10px; border:2px solid #0b1220; }
 
   .hint{ color:var(--muted); font-size:12px; }
-
-  .logs{
-    margin-top:16px; padding:14px 14px 18px;
-    border:1px solid var(--ring); border-radius:14px;
-    background:
-      radial-gradient(400px 180px at 10% -10%, #6aa7ff10, transparent 50%),
-      #071226;
-    height:390px; overflow:auto; font-size:13.5px; line-height:1.6;
-    box-shadow: inset 0 0 0 1px #ffffff05, var(--shadow);
-    white-space:pre-wrap;
-  }
-  .logs::-webkit-scrollbar{ width:10px; height:10px; }
-  .logs::-webkit-scrollbar-thumb{
-    background: linear-gradient(180deg, #3a5f9d, #2d4e86);
-    border-radius:10px; border:2px solid #0b1220;
-  }
-
-  .footer{
-    color:var(--muted); font-size:12px; text-align:center; margin-top:18px;
-  }
 </style>
 </head>
 
 <body>
   <div class="wrap">
-    <!-- 頂部 -->
     <div class="hero">
       <div class="logo" aria-hidden="true"></div>
       <div>
-        <h2>中↔韓 同聲傳譯（音訊不回傳給發話者｜Edge TTS 播給其他人）</h2>
-        <div class="subtitle">說一句翻一句｜4060 加速｜AirPods/裝置切換支援</div>
+        <h2>中↔韓 同聲傳譯（只播譯音給其他人｜不回傳給發話者）</h2>
+        <div class="subtitle">杜絕「中→韓→中」回傳鏈｜4060 加速｜AirPods/裝置切換支援</div>
       </div>
     </div>
 
-    <!-- 卡片：控制區 -->
     <div class="card" style="margin-bottom:14px;">
       <div class="grid">
         <div class="col-4">
           <label for="name">名稱(이름)</label>
           <input id="name" type="text" value="Public" placeholder="你的名字 / 이름" />
         </div>
-
         <div class="col-3">
           <label for="srcLang">來源語言(원어)</label>
           <select id="srcLang">
@@ -194,7 +97,6 @@
             <option value="ko">韓文 (한국어)</option>
           </select>
         </div>
-
         <div class="col-5">
           <label>連線(연결)</label>
           <div class="btns">
@@ -204,7 +106,6 @@
             <span class="tx" id="tx">TX: 0 pkt/s</span>
           </div>
         </div>
-
         <div class="col-12">
           <div class="switches">
             <label><input id="mute" type="checkbox"> 不送出麥克風(마이크 전송 안 함)</label>
@@ -216,7 +117,6 @@
       </div>
     </div>
 
-    <!-- 卡片：裝置 -->
     <div class="card">
       <div class="grid">
         <div class="col-6">
@@ -224,32 +124,36 @@
           <select id="micSel"></select>
         </div>
         <div class="col-6">
-          <label for="outSel">輸出裝置(출력, Edge TTS)</label>
+          <label for="outSel">輸出裝置(출력, MP3)</label>
           <select id="outSel"></select>
         </div>
         <div class="col-12">
-          <div class="hint">音訊只傳給「其他人」，不回傳給發話者 / 발화자에게는 오디오가 돌아오지 않습니다.</div>
+          <div class="hint">系統只播放「譯音 MP3」，永不播放「原音 WAV」。播放期間會暫停送出麥克風，避免回傳鏈。</div>
         </div>
       </div>
 
       <div class="logs" id="logs"></div>
     </div>
-
-    <div class="footer">若要更換語音(Voice)或 Cloudflare 網域，僅需改環境變數或檔案內常數；功能不受影響。</div>
   </div>
 
-<!-- === 功能腳本（原功能不變） === -->
 <script>
-// 換成 cloudflared 顯示的網址（含 https://）
-const TUNNEL_HOST = "https://devon-easily-feedback-denver.trycloudflare.com";
+/* 換成 cloudflared 顯示的網址（含 https://） */
+const TUNNEL_HOST = "https://port-yea-myrtle-lib.trycloudflare.com";
 
 let ws=null, audioCtx=null, worklet=null, sp=null, stream=null, pingTimer=null, txTimer=null;
 let txPkts=0;
 
 let devicesCache=[]; let currentMicId=""; let currentOutId="";
-
 const $ = (s)=>document.querySelector(s);
 const log = (s)=>{ const el=$('#logs'); el.textContent+=s+"\n"; el.scrollTop=el.scrollHeight; };
+
+/* 播放抑制（Ducking）：播放他人音訊時暫停送麥，避免「中→韓→中」回傳鏈 */
+let playbackCount = 0;
+let lastPlaybackEndAt = 0;
+const SUPPRESS_TAIL_MS = 250;
+function micSuppressed(){
+  return $('#mute').checked || playbackCount>0 || (performance.now() - lastPlaybackEndAt) < SUPPRESS_TAIL_MS;
+}
 
 async function refreshDevices(){
   devicesCache = await navigator.mediaDevices.enumerateDevices();
@@ -309,9 +213,9 @@ async function fallbackScriptProcessor(source){
     for(let off=0; off<pcm.length; off+=pkt){
       const sl=pcm.subarray(off, off+pkt);
       if(sl.length===pkt){
-        txPkts++;
-        if(!$('#mute').checked && ws && ws.readyState===1){
+        if(!micSuppressed() && ws && ws.readyState===1){
           ws.send(sl.buffer);
+          txPkts++;
         }
       }
     }
@@ -375,9 +279,8 @@ async function join(){
 
         let sent=0;
         worklet.port.onmessage = (e)=>{
-          sent++; txPkts++;
-          if(!$('#mute').checked && ws && ws.readyState===1){
-            ws.send(e.data);
+          if(!micSuppressed() && ws && ws.readyState===1){
+            ws.send(e.data); txPkts++; sent++;
           }
         };
 
@@ -402,17 +305,25 @@ async function join(){
 
   ws.onmessage = async (ev)=>{
     if(ev.data instanceof ArrayBuffer){
-      // 伺服器來的音：只會是「別人的原音/譯音」。不會回到自己。
+      // ★ 只播放 MP3（譯音）。若為 WAV（原音），直接忽略。
       const buf = ev.data;
-      const mime = sniffMime(buf);
-      const blob = new Blob([buf],{type:mime});
+      const isWav = (buf.byteLength>=12) && (new TextDecoder().decode(new DataView(buf,0,4))==='RIFF') &&
+                    (new TextDecoder().decode(new DataView(buf,8,4))==='WAVE');
+      if (isWav) { /* 忽略原音 */ return; }
+
+      const blob = new Blob([buf],{type:'audio/mpeg'});
       const url  = URL.createObjectURL(blob);
       const a = new Audio(url);
       a.autoplay = true;
+
+      // 播放期間啟用 Ducking 抑制，避免「中→韓→中」回傳鏈
+      a.addEventListener('play', ()=>{ playbackCount++; });
+      a.addEventListener('ended', ()=>{ playbackCount=Math.max(0,playbackCount-1); lastPlaybackEndAt=performance.now(); URL.revokeObjectURL(url); });
+      a.addEventListener('error', ()=>{ playbackCount=Math.max(0,playbackCount-1); lastPlaybackEndAt=performance.now(); URL.revokeObjectURL(url); });
+
       if (typeof a.setSinkId === 'function' && $('#outSel').value){
         try { await a.setSinkId($('#outSel').value); } catch(e){ log(`⚠️ 設定輸出失敗(출력 설정 실패)：${e}`); }
       }
-      a.onended = ()=>{ URL.revokeObjectURL(url); };
       a.play().catch(()=>{});
       return;
     }
@@ -429,23 +340,9 @@ async function join(){
   ws.onclose = ()=>{ log("連線關閉(연결 종료)"); leave(); };
 }
 
-function sniffMime(buf){
-  if (buf.byteLength >= 12){
-    const dv = new DataView(buf);
-    const riff = String.fromCharCode(dv.getUint8(0),dv.getUint8(1),dv.getUint8(2),dv.getUint8(3));
-    const wave = String.fromCharCode(dv.getUint8(8),dv.getUint8(9),dv.getUint8(10),dv.getUint8(11));
-    if (riff === 'RIFF' && wave === 'WAVE') return 'audio/wav';
-  }
-  return 'audio/mpeg';
-}
-
 $('#join').onclick = join;
 $('#leave').onclick = leave;
-$('#mute').onchange = ()=>{ if(ws && ws.readyState===1) ws.send(JSON.stringify({type:'mute', value:$('#mute').checked})); };
-
-$('#micSel').onchange = async ()=>{ currentMicId = $('#micSel').value || ""; await refreshDevices(); };
-$('#outSel').onchange = ()=>{ currentOutId = $('#outSel').value || ""; };
-
+$('#mute').onchange = ()=>{ /* 即時生效 */ };
 navigator.mediaDevices.addEventListener('devicechange', refreshDevices);
 (async ()=>{ try{ await navigator.mediaDevices.getUserMedia({audio:true}); }catch(_){ } await refreshDevices(); })();
 </script>
