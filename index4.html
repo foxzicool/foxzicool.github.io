@@ -44,7 +44,7 @@
     <select id="micSel"></select>
     <label for="outSel">輸出裝置（播放他人譯音 MP3）</label>
     <select id="outSel"></select>
-    <span class="hint">伺服器只會傳譯音 MP3；發話者自己不會收到音訊，僅本地朗讀。</span>
+    <span class="hint">伺服器只會傳譯音 MP3；發話者自己不會收到音訊，僅本地朗讀。若 MP3 失敗，會以文字備援，本地朗讀仍是機器聲。</span>
   </div>
 
   <div class="logs" id="logs"></div>
@@ -54,7 +54,7 @@ function getHostFromQuery(){
   const u = new URL(location.href);
   return (u.searchParams.get("host") || "").trim();
 }
-const DEFAULT_HOST = "formed-pavilion-practitioners-marks.trycloudflare.com"; // 每次 cloudflared 變更，改這行或用 ?host=
+const DEFAULT_HOST = "issues-retro-implemented-concern.trycloudflare.com";
 const TUNNEL_HOST = "https://" + (getHostFromQuery() || DEFAULT_HOST);
 
 let ws=null, audioCtx=null, worklet=null, sp=null, stream=null, pingTimer=null, txTimer=null;
@@ -159,7 +159,7 @@ async function join(){
     audioCtx = new (window.AudioContext||window.webkitAudioContext)({sampleRate:48000});
     await audioCtx.resume().catch(()=>{});
 
-    // 優先用 Worklet（更低延遲），失敗退回 ScriptProcessor
+    // 優先 Worklet，失敗退 ScriptProcessor
     try{
       if (audioCtx.audioWorklet) {
         const blobURL = URL.createObjectURL(new Blob([`
@@ -218,7 +218,7 @@ async function join(){
 
   ws.onmessage = async (ev)=>{
     if(ev.data instanceof ArrayBuffer){
-      // 伺服器只會送譯音 MP3，而且不會發回給說話者本人
+      // 伺服器只會送譯音 MP3（若成功）
       const buf = ev.data;
       const blob = new Blob([buf],{type:'audio/mpeg'});
       const url  = URL.createObjectURL(blob);
@@ -239,8 +239,13 @@ async function join(){
       if(o.type==="mute")  log(`🔇 ${o.name} ${o.muted?"已靜音":"取消靜音"}`);
       if(o.type==="error") log(`❌ ${o.msg}`);
       if(o.type==="tts_info") log(`🎧 MP3 bytes=${o.bytes} from ${o.from}`);
+
       // 只對本人：立刻本地朗讀
       if(o.type==="tts_client"){
+        speakNow(o.text, o.lang);
+      }
+      // MP3 失敗時：伺服器會傳文字備援給「其他人」，本地朗讀
+      if(o.type==="tts_text"){
         speakNow(o.text, o.lang);
       }
     }catch(_){}
@@ -263,7 +268,7 @@ function speakNow(text, lang){
   const cand = voices.filter(v => v.lang && v.lang.toLowerCase().startsWith(lang==="ko"?"ko":"zh"));
   if (cand.length) u.voice = cand[0];
   u.rate = 1.0; u.pitch = 1.0; u.volume = 1.0;
-  window.speechSynthesis.cancel(); // 避免排隊
+  window.speechSynthesis.cancel();
   window.speechSynthesis.speak(u);
 }
 
