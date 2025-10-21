@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>中↔韓 同聲傳譯｜自己端只聽機器人｜他人聽MP3</title>
+<title>中↔韓 同聲傳譯｜自己端只聽機器人；他人聽MP3</title>
 <style>
   body{font-family:system-ui,-apple-system,"Noto Sans TC","Microsoft JhengHei",Arial;padding:20px;max-width:920px;margin:auto}
   .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
@@ -44,7 +44,7 @@
     <select id="micSel"></select>
     <label for="outSel">輸出裝置（播放他人譯音 MP3）</label>
     <select id="outSel"></select>
-    <span class="hint">伺服器只會傳譯音 MP3；發話者自己不會收到音訊，僅本地朗讀。</span>
+    <span class="hint">網址可加 ?host=你的 trycloudflare 主機，例如：?host=formed-xxx.trycloudflare.com</span>
   </div>
 
   <div class="logs" id="logs"></div>
@@ -54,7 +54,8 @@ function getHostFromQuery(){
   const u = new URL(location.href);
   return (u.searchParams.get("host") || "").trim();
 }
-const DEFAULT_HOST = "formed-pavilion-practitioners-marks.trycloudflare.com"; // 每次 cloudflared 變更，改這行或用 ?host=
+// 預設主機（你可直接改這裡，也可用 ?host= 覆蓋）
+const DEFAULT_HOST = "formed-pavilion-practitioners-marks.trycloudflare.com";
 const TUNNEL_HOST = "https://" + (getHostFromQuery() || DEFAULT_HOST);
 
 let ws=null, audioCtx=null, sp=null, stream=null, pingTimer=null, txTimer=null;
@@ -118,7 +119,7 @@ async function fallbackScriptProcessor(source){
       if(s>1) s=1; if(s<-1) s=-1;
       pcm[i]=s<0?s*0x8000:s*0x7FFF;
     }
-    const pkt=320;
+    const pkt=320; // 20ms @ 16k
     for(let off=0; off<pcm.length; off+=pkt){
       const sl=pcm.subarray(off, off+pkt);
       if(sl.length===pkt){
@@ -149,8 +150,7 @@ async function join(){
 
     try{
       const devId = $('#micSel').value || undefined;
-      const streamLocal = await getMicStream(devId);
-      stream = streamLocal;
+      stream = await getMicStream(devId);
       const info = stream.getAudioTracks()[0]?.getSettings?.() || {};
       log(`🎙️ mic：${(stream.getAudioTracks()[0]?.label)||'未知'} | 設定：${JSON.stringify(info)}`);
     }catch(e){ log(`❌ 取得麥克風失敗：${e}`); return; }
@@ -168,7 +168,7 @@ async function join(){
 
   ws.onmessage = async (ev)=>{
     if(ev.data instanceof ArrayBuffer){
-      // 伺服器只會送譯音 MP3，而且不會發回給說話者本人
+      // 從伺服器來的永遠是 MP3（譯音），而且不會回送給發話者本人
       const buf = ev.data;
       const blob = new Blob([buf],{type:'audio/mpeg'});
       const url  = URL.createObjectURL(blob);
@@ -189,7 +189,8 @@ async function join(){
       if(o.type==="mute")  log(`🔇 ${o.name} ${o.muted?"已靜音":"取消靜音"}`);
       if(o.type==="error") log(`❌ ${o.msg}`);
       if(o.type==="tts_info") log(`🎧 MP3 bytes=${o.bytes} from ${o.from}`);
-      // 只對本人：立刻本地朗讀
+
+      // 只對「本人」送來：立即用 Web Speech 本地朗讀
       if(o.type==="tts_client"){
         speakNow(o.text, o.lang);
       }
@@ -199,7 +200,7 @@ async function join(){
   ws.onclose = ()=>{ log("連線關閉"); leave(); };
 }
 
-/* 本地即時朗讀：只朗讀譯文（中文或韓文） */
+/* 本地即時朗讀：只朗讀譯文（中文或韓文），你不會聽到任何人的原音 */
 let voices = [];
 function loadVoices(){ voices = window.speechSynthesis.getVoices() || []; }
 if ('speechSynthesis' in window){
