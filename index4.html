@@ -7,9 +7,9 @@
 
 <style>
   :root{
-    --bg: #0b1220; --bg2:#0e1830; --card:#0f1b33cc; --muted:#8aa0c2; --text:#e9f0ff;
+    --bg:#0b1220; --bg2:#0e1830; --card:#0f1b33cc; --muted:#8aa0c2; --text:#e9f0ff;
     --primary:#6aa7ff; --primary-2:#7be2ff; --accent:#c9f27b; --danger:#ff6b6b; --ok:#75e0a2;
-    --ring:#213454; --border:#20304a; --shadow: 0 10px 30px rgba(0,0,0,.35); --radius: 16px;
+    --ring:#213454; --border:#20304a; --shadow:0 10px 30px rgba(0,0,0,.35); --radius:16px;
   }
   body{
     margin:0; min-height:100vh; color:var(--text);
@@ -27,18 +27,24 @@
   h2{ margin:0; font-size:22px; letter-spacing:.3px; }
   .subtitle{ color:var(--muted); font-size:13px; margin-top:2px; }
 
-  .card{ background: var(--card); backdrop-filter: blur(10px); border:1px solid var(--border);
-    border-radius: var(--radius); box-shadow: var(--shadow); padding:18px; }
+  .card{
+    background: var(--card); backdrop-filter: blur(10px); border:1px solid var(--border);
+    border-radius: var(--radius); box-shadow: var(--shadow); padding:18px;
+  }
 
   .grid{ display:grid; gap:12px; grid-template-columns: repeat(12, 1fr); align-items:center; }
-  .col-2{grid-column:span 2}.col-3{span:3}.col-4{span:4}.col-5{span:5}.col-6{span:6}.col-12{span:12}
-  @media (max-width: 880px){ .grid>*{ grid-column: span 12 !important; } }
+  .col-2{ grid-column: span 2; }
+  .col-3{ grid-column: span 3; }
+  .col-4{ grid-column: span 4; }
+  .col-5{ grid-column: span 5; }
+  .col-6{ grid-column: span 6; }
+  .col-12{ grid-column: span 12; }
+  @media (max-width:880px){ .grid>*{ grid-column: span 12 !important; } }
 
   label{ font-size:13px; color:var(--muted); display:block; margin-bottom:6px; }
   input[type="text"], select{
     width:100%; padding:10px 12px; background:#0b1730; color:var(--text);
-    border:1px solid var(--ring); border-radius:12px; outline:none;
-    transition: box-shadow .2s, border-color .2s;
+    border:1px solid var(--ring); border-radius:12px; outline:none; transition: box-shadow .2s, border-color .2s;
   }
   input[type="text"]:focus, select:focus{ border-color: var(--primary); box-shadow: 0 0 0 4px #6aa7ff22; }
 
@@ -48,10 +54,12 @@
 
   .btns{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
   button{
-    border:1px solid var(--ring); color:var(--text); background:#0b1730; padding:10px 14px; border-radius:12px;
-    cursor:pointer; transition:transform .05s, box-shadow .2s, border-color .2s, background .2s;
+    border:1px solid var(--ring); color:var(--text); background:#0b1730;
+    padding:10px 14px; border-radius:12px; cursor:pointer;
+    transition:transform .05s, box-shadow .2s, border-color .2s, background .2s;
   }
-  button:active{ transform: translateY(1px); } button[disabled]{ opacity:.5; cursor:not-allowed; }
+  button:active{ transform: translateY(1px); }
+  button[disabled]{ opacity:.5; cursor:not-allowed; }
   .btn-primary{ background: linear-gradient(180deg, #6aa7ff, #5b8ffb); border-color:#6aa7ffcc; color:#0b1220; font-weight:700; }
   .btn-danger{ background: linear-gradient(180deg, #ff7b7b, #ff6262); border-color:#ff9a9a; color:#1a0c0c; font-weight:700; }
 
@@ -60,13 +68,17 @@
   .dot{ width:8px; height:8px; border-radius:50%; background:#8aa0c2; box-shadow: 0 0 0 4px #8aa0c210; }
   .now .dot{ background: var(--ok); box-shadow: 0 0 0 4px #75e0a220; } .now{ color:var(--ok)!important; border-color:#2d5a4a; }
 
-  .tx{ font-family: ui-monospace, Menlo, Consolas, monospace; font-size:12px; color:#cfe2ff; background:#0b1730;
-    padding:6px 10px; border-radius:10px; border:1px solid var(--ring); }
+  .tx{
+    font-family: ui-monospace, Menlo, Consolas, monospace; font-size:12px; color:#cfe2ff; background:#0b1730;
+    padding:6px 10px; border-radius:10px; border:1px solid var(--ring);
+  }
 
-  .logs{ margin-top:16px; padding:14px 14px 18px; border:1px solid var(--ring); border-radius:14px;
+  .logs{
+    margin-top:16px; padding:14px 14px 18px; border:1px solid var(--ring); border-radius:14px;
     background: radial-gradient(400px 180px at 10% -10%, #6aa7ff10, transparent 50%), #071226;
     height:390px; overflow:auto; font-size:13.5px; line-height:1.6; box-shadow: inset 0 0 0 1px #ffffff05, var(--shadow);
-    white-space:pre-wrap; }
+    white-space:pre-wrap;
+  }
   .logs::-webkit-scrollbar{ width:10px; height:10px; }
   .logs::-webkit-scrollbar-thumb{ background: linear-gradient(180deg, #3a5f9d, #2d4e86); border-radius:10px; border:2px solid #0b1220; }
 
@@ -90,6 +102,7 @@
           <label for="name">名稱(이름)</label>
           <input id="name" type="text" value="Public" placeholder="你的名字 / 이름" />
         </div>
+
         <div class="col-3">
           <label for="srcLang">來源語言(원어)</label>
           <select id="srcLang">
@@ -97,6 +110,7 @@
             <option value="ko">韓文 (한국어)</option>
           </select>
         </div>
+
         <div class="col-5">
           <label>連線(연결)</label>
           <div class="btns">
@@ -106,6 +120,7 @@
             <span class="tx" id="tx">TX: 0 pkt/s</span>
           </div>
         </div>
+
         <div class="col-12">
           <div class="switches">
             <label><input id="mute" type="checkbox"> 不送出麥克風(마이크 전송 안 함)</label>
@@ -128,7 +143,7 @@
           <select id="outSel"></select>
         </div>
         <div class="col-12">
-          <div class="hint">系統只播放「譯音 MP3」，永不播放「原音 WAV」。播放期間會暫停送出麥克風，避免回傳鏈。</div>
+          <div class="hint">系統只播放「譯音 MP3」，永不播放「原音 WAV」。播放期間暫停送出麥克風以避免回傳鏈。</div>
         </div>
       </div>
 
@@ -159,10 +174,21 @@ async function refreshDevices(){
   devicesCache = await navigator.mediaDevices.enumerateDevices();
   const mics = devicesCache.filter(d=>d.kind==="audioinput");
   const outs = devicesCache.filter(d=>d.kind==="audiooutput");
+
   const micSel=$('#micSel'); micSel.innerHTML="";
-  mics.forEach(d=>{ const o=document.createElement('option'); o.value=d.deviceId; o.textContent=d.label || `麥克風/마이크 (${d.deviceId.slice(0,6)}…)`; micSel.appendChild(o); });
+  mics.forEach(d=>{
+    const o=document.createElement('option');
+    o.value=d.deviceId; o.textContent=d.label || `麥克風/마이크 (${d.deviceId.slice(0,6)}…)`;
+    micSel.appendChild(o);
+  });
+
   const outSel=$('#outSel'); outSel.innerHTML="";
-  outs.forEach(d=>{ const o=document.createElement('option'); o.value=d.deviceId; o.textContent=d.label || `輸出/출력 (${d.deviceId.slice(0,6)}…)`; outSel.appendChild(o); });
+  outs.forEach(d=>{
+    const o=document.createElement('option');
+    o.value=d.deviceId; o.textContent=d.label || `輸出/출력 (${d.deviceId.slice(0,6)}…)`;
+    outSel.appendChild(o);
+  });
+
   if (currentMicId && [...micSel.options].some(o=>o.value===currentMicId)) micSel.value=currentMicId;
   if (currentOutId && [...outSel.options].some(o=>o.value===currentOutId)) outSel.value=currentOutId;
 }
@@ -190,7 +216,7 @@ function cleanupAudio(){
   worklet=sp=null; audioCtx=null; stream=null; pingTimer=txTimer=null; txPkts=0;
 }
 function leave(){
-  if(ws){ try{ ws.close(); }catch(_){} }
+  if(ws){ try{ ws.close(); }catch(_){ } }
   cleanupAudio();
   $('#join').disabled=false; $('#leave').disabled=true;
   const s=$('#status'); s.classList.remove('now'); s.innerHTML='<span class="dot"></span> 未連線(미연결)';
@@ -287,7 +313,13 @@ async function join(){
         source.connect(worklet); worklet.connect(zeroGain); zeroGain.connect(audioCtx.destination);
         log(`✅ Worklet 啟用(사용)（ctxRate=${audioCtx.sampleRate}Hz）`);
 
-        setTimeout(()=>{ if(sent===0){ log("⚠️ Worklet 無送包(전송 無)，改 ScriptProcessor"); try{ worklet.disconnect(); }catch(_){ } fallbackScriptProcessor(source); } }, 700);
+        setTimeout(()=>{
+          if(sent===0){
+            log("⚠️ Worklet 無送包(전송 無)，改 ScriptProcessor");
+            try{ worklet.disconnect(); }catch(_){}
+            fallbackScriptProcessor(source);
+          }
+        }, 700);
       } else {
         const source = audioCtx.createMediaStreamSource(stream);
         await fallbackScriptProcessor(source);
@@ -307,9 +339,13 @@ async function join(){
     if(ev.data instanceof ArrayBuffer){
       // ★ 只播放 MP3（譯音）。若為 WAV（原音），直接忽略。
       const buf = ev.data;
-      const isWav = (buf.byteLength>=12) && (new TextDecoder().decode(new DataView(buf,0,4))==='RIFF') &&
-                    (new TextDecoder().decode(new DataView(buf,8,4))==='WAVE');
-      if (isWav) { /* 忽略原音 */ return; }
+      const isWav = (function(){
+        if (buf.byteLength < 12) return false;
+        const dv = new DataView(buf);
+        const tag4 = (o)=> String.fromCharCode(dv.getUint8(o), dv.getUint8(o+1), dv.getUint8(o+2), dv.getUint8(o+3));
+        return tag4(0)==='RIFF' && tag4(8)==='WAVE';
+      })();
+      if (isWav) return;
 
       const blob = new Blob([buf],{type:'audio/mpeg'});
       const url  = URL.createObjectURL(blob);
