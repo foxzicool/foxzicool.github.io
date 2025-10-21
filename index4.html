@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>中↔韓 同聲傳譯（他人可聽譯音｜自己不播放）</title>
+<title>中↔韓 同聲傳譯｜只播譯音（自己不播放）</title>
 <style>
   body{font-family:system-ui,-apple-system,"Noto Sans TC","Microsoft JhengHei",Arial;padding:20px;max-width:920px;margin:auto}
   .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
@@ -16,7 +16,7 @@
   .hint{color:#666;font-size:13px}
 </style>
 <body>
-  <h2>中↔韓 同聲傳譯（他人可聽譯音｜自己不播放）</h2>
+  <h2>中↔韓 同聲傳譯（只播放譯音｜自己完全不播放）</h2>
 
   <div class="row">
     <label>名稱</label>
@@ -42,19 +42,21 @@
   <div class="row" style="margin-top:10px">
     <label for="micSel">輸入裝置</label>
     <select id="micSel"></select>
-    <label for="outSel">輸出裝置（Edge TTS MP3 用）</label>
+    <label for="outSel">輸出裝置（播放他人譯音 MP3）</label>
     <select id="outSel"></select>
-    <span class="hint">自己不會聽到譯音；Edge TTS 的 MP3 只播給其他人。</span>
+    <span class="hint">伺服器只會傳譯音 MP3；發話者自己不會收到音訊。</span>
   </div>
 
   <div class="logs" id="logs"></div>
 
 <script>
-const TUNNEL_HOST = "https://port-yea-myrtle-lib.trycloudflare.com";
-let myName = "";
+const TUNNEL_HOST = "https://briefly-enlarge-packaging-adjustable.trycloudflare.com";
+
 let ws=null, audioCtx=null, worklet=null, sp=null, stream=null, pingTimer=null, txTimer=null;
 let txPkts=0;
+
 let devicesCache=[]; let currentMicId=""; let currentOutId="";
+
 const $ = (s)=>document.querySelector(s);
 const log = (s)=>{ const el=$('#logs'); el.textContent+=s+"\n"; el.scrollTop=el.scrollHeight; };
 
@@ -93,7 +95,7 @@ function cleanupAudio(){
   worklet=sp=null; audioCtx=null; stream=null; pingTimer=txTimer=null; txPkts=0;
 }
 function leave(){
-  if(ws){ try{ ws.close(); }catch(_){} }
+  if(ws){ try{ ws.close(); }catch(_){ } }
   cleanupAudio();
   $('#join').disabled=false; $('#leave').disabled=true;
   $('#status').textContent="未連線"; $('#status').classList.remove('now');
@@ -131,7 +133,7 @@ async function join(){
   try{ await navigator.mediaDevices.getUserMedia({audio:true}); }catch(_){}
   await refreshDevices();
 
-  myName = ($('#name').value || 'Guest').trim().slice(0,40);
+  const name = ($('#name').value || 'Guest').trim().slice(0,40);
   const srcLang = $('#srcLang').value;
 
   ws = new WebSocket(`${TUNNEL_HOST.replace('https://','wss://')}/ws`);
@@ -139,7 +141,7 @@ async function join(){
 
   ws.onopen = async ()=>{
     $('#status').textContent="已連線"; $('#status').classList.add('now');
-    ws.send(JSON.stringify({name: myName, src_lang: srcLang}));
+    ws.send(JSON.stringify({name, src_lang: srcLang}));
 
     try{
       const devId = $('#micSel').value || undefined;
@@ -155,13 +157,14 @@ async function join(){
     await fallbackScriptProcessor(source);
 
     txTimer = setInterval(()=>{ $('#tx').textContent = `TX: ${txPkts} pkt/s`; txPkts=0; }, 1000);
-    $('#join').disabled=true; $('#leave').disabled=false;
+    $('#join').disabled = true;
+    $('#leave').disabled = false;
     pingTimer = setInterval(()=>{ try{ ws.send(JSON.stringify({type:"ping"})); }catch(_){ } }, 20000);
   };
 
   ws.onmessage = async (ev)=>{
     if(ev.data instanceof ArrayBuffer){
-      // ❗ 伺服器目前沒附發送者ID，我們假設 TTS 只來自他人 (safe)
+      // 伺服器現在只會傳譯音 MP3，且不會回送給發話者
       const buf = ev.data;
       const mime = sniffMime(buf);
       const blob = new Blob([buf],{type:mime});
@@ -175,7 +178,6 @@ async function join(){
       a.play().catch(()=>{});
       return;
     }
-
     try{
       const o=JSON.parse(ev.data);
       if(o.type==="join")  log(`🔵 ${o.name} 加入，人數 ${o.count}`);
@@ -183,13 +185,7 @@ async function join(){
       if(o.type==="final") log(`✅ ${o.from}（${o.dir}）\n原文：${o.text}\n翻譯：${o.mt}`);
       if(o.type==="mute")  log(`🔇 ${o.name} ${o.muted?"已靜音":"取消靜音"}`);
       if(o.type==="error") log(`❌ ${o.msg}`);
-
-      // ✅ 自己不朗讀（也不重播），只看文字
-      if(o.type==="tts_client" && o.from !== myName){
-        log(`🎧 ${o.from} 翻譯：${o.text}`);
-      } else if (o.type==="tts_client" && o.from === myName){
-        log(`🈚 自己翻譯完成（靜音）→ ${o.text}`);
-      }
+      // 不處理 tts_client（後端已不送）
     }catch(_){}
   };
 
@@ -197,6 +193,7 @@ async function join(){
 }
 
 function sniffMime(buf){
+  // 雖然現在只有 MP3，為了相容性保留 WAV 檢測
   if (buf.byteLength >= 12){
     const dv = new DataView(buf);
     const riff = String.fromCharCode(dv.getUint8(0),dv.getUint8(1),dv.getUint8(2),dv.getUint8(3));
