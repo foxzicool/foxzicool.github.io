@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>中↔韓 同聲傳譯｜極速（自己端即時朗讀＋4060 加速）</title>
+<title>中↔韓 同聲傳譯｜他人可聽譯音（自己不播放）</title>
 <style>
   body{font-family:system-ui,-apple-system,"Noto Sans TC","Microsoft JhengHei",Arial;padding:20px;max-width:920px;margin:auto}
   .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
@@ -16,7 +16,7 @@
   .hint{color:#666;font-size:13px}
 </style>
 <body>
-  <h2>中↔韓 同聲傳譯（說一句翻一句｜自己端立即朗讀｜Edge TTS 供他人播放）</h2>
+  <h2>中↔韓 同聲傳譯（他人可聽譯音｜自己不播放）</h2>
 
   <div class="row">
     <label>名稱</label>
@@ -44,7 +44,7 @@
     <select id="micSel"></select>
     <label for="outSel">輸出裝置（Edge TTS MP3 用）</label>
     <select id="outSel"></select>
-    <span class="hint">你自己聽到的是瀏覽器朗讀（走系統預設輸出）；Edge TTS 的 MP3 只播給其他人，會走這裡選的輸出。</span>
+    <span class="hint">自己不會聽到譯音；Edge TTS 的 MP3 只播給其他人。</span>
   </div>
 
   <div class="logs" id="logs"></div>
@@ -54,9 +54,7 @@ const TUNNEL_HOST = "https://port-yea-myrtle-lib.trycloudflare.com";
 
 let ws=null, audioCtx=null, worklet=null, sp=null, stream=null, pingTimer=null, txTimer=null;
 let txPkts=0;
-
 let devicesCache=[]; let currentMicId=""; let currentOutId="";
-
 const $ = (s)=>document.querySelector(s);
 const log = (s)=>{ const el=$('#logs'); el.textContent+=s+"\n"; el.scrollTop=el.scrollHeight; };
 
@@ -211,7 +209,6 @@ async function join(){
 
   ws.onmessage = async (ev)=>{
     if(ev.data instanceof ArrayBuffer){
-      // 伺服器來的音：原音=WAV（別人）或 譯音=MP3（給別人）
       const buf = ev.data;
       const mime = sniffMime(buf);
       const blob = new Blob([buf],{type:mime});
@@ -233,9 +230,9 @@ async function join(){
       if(o.type==="mute")  log(`🔇 ${o.name} ${o.muted?"已靜音":"取消靜音"}`);
       if(o.type==="error") log(`❌ ${o.msg}`);
 
-      // 只對「自己」送來的即時朗讀事件
+      // ✅ 改成「不朗讀自己端」只顯示翻譯文字
       if(o.type==="tts_client"){
-        speakNow(o.text, o.lang);
+        log(`🎧 翻譯完成（不播放）→ ${o.text}`);
       }
     }catch(_){}
   };
@@ -253,31 +250,11 @@ function sniffMime(buf){
   return 'audio/mpeg';
 }
 
-/* 你的端：立即用 Web Speech 朗讀（走系統預設輸出、延遲極低） */
-let voices = [];
-function loadVoices(){ voices = window.speechSynthesis.getVoices() || []; }
-if ('speechSynthesis' in window){
-  loadVoices();
-  window.speechSynthesis.onvoiceschanged = loadVoices;
-}
-function speakNow(text, lang){
-  if (!('speechSynthesis' in window)) { log("⚠️ 瀏覽器不支援朗讀"); return; }
-  const u = new SpeechSynthesisUtterance(text);
-  u.lang = (lang==="ko" ? "ko-KR" : "zh-TW");
-  const cand = voices.filter(v => v.lang && v.lang.toLowerCase().startsWith(lang==="ko"?"ko":"zh"));
-  if (cand.length) u.voice = cand[0];
-  u.rate = 1.0; u.pitch = 1.0; u.volume = 1.0;
-  window.speechSynthesis.cancel(); // 避免排隊
-  window.speechSynthesis.speak(u);
-}
-
 $('#join').onclick = join;
 $('#leave').onclick = leave;
 $('#mute').onchange = ()=>{ if(ws && ws.readyState===1) ws.send(JSON.stringify({type:'mute', value:$('#mute').checked})); };
-
 $('#micSel').onchange = async ()=>{ currentMicId = $('#micSel').value || ""; await refreshDevices(); };
 $('#outSel').onchange = ()=>{ currentOutId = $('#outSel').value || ""; };
-
 navigator.mediaDevices.addEventListener('devicechange', refreshDevices);
 (async ()=>{ try{ await navigator.mediaDevices.getUserMedia({audio:true}); }catch(_){ } await refreshDevices(); })();
 </script>
