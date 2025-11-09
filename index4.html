@@ -2,12 +2,12 @@
 <html lang="zh-Hant">
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>中↔韓 同聲傳譯 / 중↔한 동시통역｜自己端無聲 · 他人聽MP3</title>
+<title>中↔韓 同聲傳譯 / 중↔한 동시통역｜自己端無聲 · 他人聽MP3/本地朗讀</title>
 <style>
   :root{
-    --bg: #0b1220; --card: rgba(255,255,255,.06); --card-border: rgba(255,255,255,.12);
-    --text: #e8eefb; --muted: #9fb0c9; --accent: #6ea8fe; --accent-2: #22d3ee;
-    --ok: #10b981; --warn: #f59e0b; --danger: #ef4444; --chip: rgba(255,255,255,.14);
+    --bg:#0b1220; --card:rgba(255,255,255,.06); --card-border:rgba(255,255,255,.12);
+    --text:#e8eefb; --muted:#9fb0c9; --accent:#6ea8fe; --accent-2:#22d3ee;
+    --ok:#10b981; --warn:#f59e0b; --danger:#ef4444; --chip:rgba(255,255,255,.14);
     --chip-text:#d9e4ff;
   }
   *{box-sizing:border-box} html,body{height:100%}
@@ -52,8 +52,8 @@
 <body>
   <div class="wrap">
     <h1>中↔韓 同聲傳譯 <span class="k">/ 중↔한 동시통역</span></h1>
-    <div class="sub">自己端：不播放任何人聲；他人：只聽譯音 MP3（失敗以文字備援）
-      <span class="k">/ 내 쪽: 원음·번역음 모두 무음 · 상대: 번역 MP3(실패 시 텍스트)</span>
+    <div class="sub">自己端：不播放任何人聲；他人：只聽譯音（伺服器MP3或本地朗讀備援）
+      <span class="k">/ 내 쪽: 원음·번역음 모두 무음 · 상대: 번역 음성</span>
     </div>
 
     <div class="grid">
@@ -94,12 +94,12 @@
           <label for="micSel">輸入裝置 / 입력 장치</label>
           <select id="micSel"></select>
 
-          <label for="outSel">輸出裝置（播放他人譯音 MP3） / 출력 장치</label>
+          <label for="outSel">輸出裝置（播放他人譯音） / 출력 장치</label>
           <select id="outSel"></select>
         </div>
 
         <p class="hint">
-          伺服器僅傳「譯音 MP3」給其他人；發話者本人不會收到任何人聲。MP3 失敗時改傳「文字備援」，由對方瀏覽器本地朗讀。
+          伺服器若有 Azure 金鑰：會傳 MP3；否則傳文字，由你的瀏覽器本地朗讀（需先點「加入」解鎖自動播放）。
         </p>
       </div>
 
@@ -115,13 +115,14 @@ function getHostFromQuery(){
   const u = new URL(location.href);
   return (u.searchParams.get("host") || "").trim();
 }
-const DEFAULT_HOST = "sky-tapes-restoration-brian.trycloudflare.com";
+const DEFAULT_HOST = "ignored-traveling-terrorists-robert.trycloudflare.com";
 const TUNNEL_HOST = "https://" + (getHostFromQuery() || DEFAULT_HOST);
 
 let ws=null, audioCtx=null, worklet=null, sp=null, stream=null, pingTimer=null, txTimer=null;
 let txPkts=0;
 
 let devicesCache=[]; let currentMicId=""; let currentOutId="";
+let autoplayUnlocked=false;
 
 const $ = (s)=>document.querySelector(s);
 const log = (s)=>{ const el=$('#logs'); el.textContent+=s+"\n"; el.scrollTop=el.scrollHeight; };
@@ -165,6 +166,22 @@ function leave(){
   cleanupAudio();
   $('#join').disabled=false; $('#leave').disabled=true;
   $('#status').textContent="未連線 / 미연결"; $('#status').classList.remove('now');
+}
+
+async function unlockAutoplayOnce(){
+  if (autoplayUnlocked) return;
+  try{
+    const ctx = audioCtx || new (window.AudioContext||window.webkitAudioContext)();
+    audioCtx = ctx;
+    const osc = ctx.createOscillator();
+    const gain= ctx.createGain();
+    gain.gain.value = 0.00001;
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.start(); osc.stop(ctx.currentTime + 0.05);
+    await ctx.resume();
+    autoplayUnlocked = true;
+    log("🔓 已解鎖自動播放");
+  }catch(e){ log("⚠️ 自動播放解鎖失敗："+e); }
 }
 
 async function fallbackScriptProcessor(source){
@@ -219,6 +236,9 @@ async function join(){
 
     audioCtx = new (window.AudioContext||window.webkitAudioContext)({sampleRate:48000});
     await audioCtx.resume().catch(()=>{});
+
+    // 先解鎖自動播放（重要！）
+    await unlockAutoplayOnce();
 
     // Worklet → fallback
     try{
@@ -279,7 +299,7 @@ async function join(){
 
   ws.onmessage = async (ev)=>{
     if(ev.data instanceof ArrayBuffer){
-      // 只會送別人的譯音 MP3（自己永遠收不到自己的 MP3）
+      // 伺服器端（Azure 成功）才會送別人的譯音 MP3（自己永遠收不到自己的 MP3）
       const buf = ev.data;
       const blob = new Blob([buf],{type:'audio/mpeg'});
       const url  = URL.createObjectURL(blob);
@@ -301,8 +321,19 @@ async function join(){
       if(o.type==="error") log(`❌ 錯誤：${o.msg}`);
       if(o.type==="tts_info") log(`🎧 MP3 bytes=${o.bytes} from ${o.from}`);
 
-      // ⚠️ 已移除對發話者的 tts_client 本地朗讀（本人永遠不朗讀自己的譯文）
-      // 若伺服器傳文字備援給「其他人」，本端不會收到；所以不需處理 tts_text。
+      // 文字備援：用 Web Speech API 在本機朗讀（對方才會收到）
+      if(o.type === "tts_text"){
+        const lang = (o.lang === "ko") ? "ko-KR" : "zh-TW";
+        const u = new SpeechSynthesisUtterance(o.text);
+        u.lang = lang;
+        // 優先選擇對應語系的 voice
+        const vs = speechSynthesis.getVoices();
+        const match = vs.find(v=>v.lang===lang) || vs.find(v=>v.lang.startsWith(lang.split('-')[0]));
+        if(match) u.voice = match;
+        u.rate = 1.0; u.pitch = 1.0; u.volume = 1.0;
+        try{ speechSynthesis.cancel(); }catch(_){}
+        try{ speechSynthesis.speak(u); log(`🗣️ 本地朗讀：${lang}`); }catch(e){ log(`⚠️ 本地朗讀失敗：${e}`); }
+      }
     }catch(_){}
   };
 
