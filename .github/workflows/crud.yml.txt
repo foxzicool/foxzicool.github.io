@@ -1,0 +1,39 @@
+      - name: Get issue data
+        if: github.event_name == 'issues'
+        run: |
+
+          echo "ISSUE_TITLE=${{ github.event.issue.title }}" >> $GITHUB_ENV
+
+          python3 - <<'PY' >> $GITHUB_ENV
+          import os
+
+          body = os.environ.get(
+              "GITHUB_EVENT_PATH"
+          )
+
+          import json
+
+          with open(
+              body,
+              "r",
+              encoding="utf-8"
+          ) as f:
+
+              event = json.load(f)
+
+          issue = event["issue"]
+
+          print(
+              "ISSUE_TITLE=" +
+              issue["title"]
+          )
+
+          print(
+              "ISSUE_BODY=" +
+              issue["body"].replace(
+                  "\n",
+                  " "
+              )
+          )
+
+          PY

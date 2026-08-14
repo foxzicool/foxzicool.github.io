@@ -10,7 +10,7 @@
         content="width=device-width, initial-scale=1.0"
     >
 
-    <title>CRUD Test</title>
+    <title>GitHub CRUD Test</title>
 
     <style>
 
@@ -104,14 +104,6 @@
             background: #f0f0f0;
         }
 
-        td:first-child {
-            width: 80px;
-        }
-
-        td:last-child {
-            width: 220px;
-        }
-
         .edit-input {
             width: 100%;
 
@@ -132,16 +124,16 @@
             border-radius: 5px;
         }
 
-        .error {
-            background: #ffe5e5;
-
-            color: #b00000;
-        }
-
         .success {
             background: #e5ffe5;
 
             color: #006600;
+        }
+
+        .error {
+            background: #ffe5e5;
+
+            color: #b00000;
         }
 
     </style>
@@ -152,7 +144,7 @@
 
 <div class="container">
 
-    <h1>簡單 CRUD 測試</h1>
+    <h1>GitHub TXT CRUD</h1>
 
     <div class="input-area">
 
@@ -198,55 +190,98 @@
         id="message"
         class="message"
     >
-        準備完成
+        正在讀取...
     </div>
 
 </div>
 
+
 <script>
 
-const API_URL = "http://localhost:8080/api/data";
+/*
+==================================================
+GitHub Repository
+==================================================
+*/
 
-let dataList = [];
+const OWNER = "foxzicool";
+
+const REPO = "foxzicool.github.io";
+
+const FILE = "backend.txt";
+
+const BRANCH = "main";
 
 
-/* =========================
-   READ
-========================= */
+/*
+==================================================
+GitHub API
+==================================================
+*/
+
+const API_URL =
+    `https://api.github.com/repos/${OWNER}/${REPO}/contents/${FILE}`;
+
+
+/*
+==================================================
+READ
+==================================================
+*/
 
 async function readData() {
 
     try {
 
         showMessage(
-            "正在讀取資料...",
+            "正在讀取 GitHub 資料...",
             false
         );
 
-        const response = await fetch(
-            API_URL
-        );
+        const response =
+            await fetch(
+                API_URL +
+                "?ref=" +
+                BRANCH
+            );
 
         if (!response.ok) {
 
             throw new Error(
-                "HTTP " + response.status
+                "GitHub API " +
+                response.status
             );
 
         }
 
-        dataList = await response.json();
+        const result =
+            await response.json();
+
+        const content =
+            atob(
+                result.content
+                    .replace(/\n/g, "")
+            );
+
+        const text =
+            decodeURIComponent(
+                escape(content)
+            );
+
+        dataList =
+            parseData(text);
 
         renderTable();
 
         showMessage(
-            "資料讀取成功，共 " +
+            "讀取成功，共 " +
             dataList.length +
             " 筆",
             false
         );
 
-    } catch (error) {
+    }
+    catch (error) {
 
         console.error(error);
 
@@ -261,9 +296,59 @@ async function readData() {
 }
 
 
-/* =========================
-   CREATE
-========================= */
+let dataList = [];
+
+
+/*
+==================================================
+解析 TXT
+==================================================
+*/
+
+function parseData(text) {
+
+    const result = [];
+
+    const lines =
+        text
+            .split(/\r?\n/)
+            .filter(
+                line =>
+                    line.trim() !== ""
+            );
+
+    lines.forEach(line => {
+
+        const parts =
+            line.split("|");
+
+        if (parts.length >= 2) {
+
+            result.push({
+
+                id: parts[0],
+
+                name:
+                    parts
+                        .slice(1)
+                        .join("|")
+
+            });
+
+        }
+
+    });
+
+    return result;
+
+}
+
+
+/*
+==================================================
+CREATE
+==================================================
+*/
 
 async function createData() {
 
@@ -283,47 +368,49 @@ async function createData() {
 
     }
 
+    /*
+     * 注意：
+     *
+     * 這裡不能直接使用 FOXTOKEN。
+     *
+     * 因為 HTML 是公開的。
+     *
+     * 這個版本先建立 GitHub Issue
+     * 作為 CRUD 請求。
+     */
+
     try {
 
-        const response = await fetch(
-            API_URL,
-            {
-                method: "POST",
-
-                headers: {
-                    "Content-Type":
-                        "application/json"
-                },
-
-                body: JSON.stringify({
-                    name: name
-                })
-            }
+        showMessage(
+            "正在送出新增請求...",
+            false
         );
 
-        const result =
-            await response.json();
+        const response =
+            await createIssue(
+                "CREATE",
+                {
+                    name: name
+                }
+            );
 
         if (!response.ok) {
 
             throw new Error(
-                result.error ||
-                "新增失敗"
+                "建立請求失敗"
             );
 
         }
 
         input.value = "";
 
-        await readData();
-
         showMessage(
-            "新增成功：ID " +
-            result.id,
+            "新增請求已送出，GitHub Actions 正在處理。",
             false
         );
 
-    } catch (error) {
+    }
+    catch (error) {
 
         console.error(error);
 
@@ -338,36 +425,11 @@ async function createData() {
 }
 
 
-/* =========================
-   UPDATE
-========================= */
-
-function startEdit(id) {
-
-    const nameCell =
-        document.getElementById(
-            "name-" + id
-        );
-
-    const input =
-        document.getElementById(
-            "edit-" + id
-        );
-
-    nameCell.style.display =
-        "none";
-
-    input.style.display =
-        "block";
-
-    input.focus();
-
-}
-
-
-/* =========================
-   儲存修改
-========================= */
+/*
+==================================================
+UPDATE
+==================================================
+*/
 
 async function updateData(id) {
 
@@ -376,10 +438,10 @@ async function updateData(id) {
             "edit-" + id
         );
 
-    const newName =
+    const name =
         input.value.trim();
 
-    if (!newName) {
+    if (!name) {
 
         alert("名稱不能為空");
 
@@ -389,42 +451,26 @@ async function updateData(id) {
 
     try {
 
-        const response = await fetch(
-            API_URL + "/" + id,
-            {
-                method: "PUT",
-
-                headers: {
-                    "Content-Type":
-                        "application/json"
-                },
-
-                body: JSON.stringify({
-                    name: newName
-                })
-            }
-        );
-
-        const result =
-            await response.json();
-
-        if (!response.ok) {
-
-            throw new Error(
-                result.error ||
-                "修改失敗"
-            );
-
-        }
-
-        await readData();
-
         showMessage(
-            "修改成功：ID " + id,
+            "正在送出修改請求...",
             false
         );
 
-    } catch (error) {
+        await createIssue(
+            "UPDATE",
+            {
+                id: id,
+                name: name
+            }
+        );
+
+        showMessage(
+            "修改請求已送出，GitHub Actions 正在處理。",
+            false
+        );
+
+    }
+    catch (error) {
 
         console.error(error);
 
@@ -439,20 +485,21 @@ async function updateData(id) {
 }
 
 
-/* =========================
-   DELETE
-========================= */
+/*
+==================================================
+DELETE
+==================================================
+*/
 
 async function deleteData(id) {
 
-    const confirmed =
-        confirm(
+    if (
+        !confirm(
             "確定要刪除 ID " +
             id +
             " 嗎？"
-        );
-
-    if (!confirmed) {
+        )
+    ) {
 
         return;
 
@@ -460,33 +507,25 @@ async function deleteData(id) {
 
     try {
 
-        const response = await fetch(
-            API_URL + "/" + id,
-            {
-                method: "DELETE"
-            }
-        );
-
-        const result =
-            await response.json();
-
-        if (!response.ok) {
-
-            throw new Error(
-                result.error ||
-                "刪除失敗"
-            );
-
-        }
-
-        await readData();
-
         showMessage(
-            "刪除成功：ID " + id,
+            "正在送出刪除請求...",
             false
         );
 
-    } catch (error) {
+        await createIssue(
+            "DELETE",
+            {
+                id: id
+            }
+        );
+
+        showMessage(
+            "刪除請求已送出，GitHub Actions 正在處理。",
+            false
+        );
+
+    }
+    catch (error) {
 
         console.error(error);
 
@@ -501,9 +540,59 @@ async function deleteData(id) {
 }
 
 
-/* =========================
-   顯示表格
-========================= */
+/*
+==================================================
+建立 Issue
+==================================================
+*/
+
+async function createIssue(
+    action,
+    data
+) {
+
+    const title =
+        "CRUD_REQUEST";
+
+    const body =
+        JSON.stringify({
+
+            action:
+                action,
+
+            data:
+                data
+
+        });
+
+    /*
+     * 這裡不能放 Token。
+     *
+     * 因為 GitHub Pages 是公開網站。
+     */
+
+    const issueUrl =
+        `https://github.com/${OWNER}/${REPO}/issues/new` +
+        `?title=${encodeURIComponent(title)}` +
+        `&body=${encodeURIComponent(body)}`;
+
+    window.open(
+        issueUrl,
+        "_blank"
+    );
+
+    return {
+        ok: true
+    };
+
+}
+
+
+/*
+==================================================
+畫面
+==================================================
+*/
 
 function renderTable() {
 
@@ -566,6 +655,7 @@ function renderTable() {
                 </button>
 
             </td>
+
         `;
 
         table.appendChild(row);
@@ -575,29 +665,65 @@ function renderTable() {
 }
 
 
-/* =========================
-   HTML 防注入
-========================= */
+/*
+==================================================
+開始修改
+==================================================
+*/
+
+function startEdit(id) {
+
+    const name =
+        document.getElementById(
+            "name-" + id
+        );
+
+    const input =
+        document.getElementById(
+            "edit-" + id
+        );
+
+    name.style.display =
+        "none";
+
+    input.style.display =
+        "block";
+
+    input.focus();
+
+}
+
+
+/*
+==================================================
+HTML 安全
+==================================================
+*/
 
 function escapeHtml(value) {
 
     return String(value)
+
         .replace(
             /&/g,
             "&amp;"
         )
+
         .replace(
             /</g,
             "&lt;"
         )
+
         .replace(
             />/g,
             "&gt;"
         )
+
         .replace(
             /"/g,
             "&quot;"
         )
+
         .replace(
             /'/g,
             "&#039;"
@@ -606,17 +732,21 @@ function escapeHtml(value) {
 }
 
 
-/* =========================
-   JavaScript 字串安全
-========================= */
+/*
+==================================================
+JS 安全
+==================================================
+*/
 
 function escapeJs(value) {
 
     return String(value)
+
         .replace(
             /\\/g,
             "\\\\"
         )
+
         .replace(
             /'/g,
             "\\'"
@@ -625,13 +755,15 @@ function escapeJs(value) {
 }
 
 
-/* =========================
-   顯示訊息
-========================= */
+/*
+==================================================
+訊息
+==================================================
+*/
 
 function showMessage(
     message,
-    isError
+    error
 ) {
 
     const element =
@@ -645,13 +777,14 @@ function showMessage(
     element.className =
         "message";
 
-    if (isError) {
+    if (error) {
 
         element.classList.add(
             "error"
         );
 
-    } else {
+    }
+    else {
 
         element.classList.add(
             "success"
@@ -662,31 +795,11 @@ function showMessage(
 }
 
 
-/* =========================
-   Enter 新增
-========================= */
-
-document
-    .getElementById("nameInput")
-    .addEventListener(
-        "keydown",
-        function(event) {
-
-            if (
-                event.key === "Enter"
-            ) {
-
-                createData();
-
-            }
-
-        }
-    );
-
-
-/* =========================
-   啟動
-========================= */
+/*
+==================================================
+啟動
+==================================================
+*/
 
 readData();
 
