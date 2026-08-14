@@ -1,215 +1,279 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
+
 <head>
+
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>簡單 CRUD 測試</title>
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>CRUD Test</title>
 
     <style>
+
+        * {
+            box-sizing: border-box;
+        }
+
         body {
-            font-family: Arial, sans-serif;
-            max-width: 800px;
+            font-family:
+                Arial,
+                "Microsoft JhengHei",
+                sans-serif;
+
+            max-width: 900px;
+
             margin: 40px auto;
+
             padding: 20px;
+
+            background: #f5f5f5;
+        }
+
+        .container {
+            background: white;
+
+            padding: 25px;
+
+            border-radius: 10px;
+
+            box-shadow:
+                0 2px 10px
+                rgba(0, 0, 0, 0.1);
         }
 
         h1 {
-            margin-bottom: 20px;
+            margin-top: 0;
         }
 
         .input-area {
             display: flex;
+
             gap: 10px;
+
             margin-bottom: 20px;
         }
 
-        input {
-            padding: 8px;
+        #nameInput {
+            flex: 1;
+
+            padding: 10px;
+
             font-size: 16px;
+
+            border: 1px solid #ccc;
+
+            border-radius: 5px;
         }
 
         button {
-            padding: 8px 15px;
-            cursor: pointer;
+            padding: 9px 15px;
+
             border: 1px solid #ccc;
-            background: #f5f5f5;
-            border-radius: 4px;
+
+            border-radius: 5px;
+
+            background: white;
+
+            cursor: pointer;
+
+            font-size: 14px;
         }
 
         button:hover {
-            background: #e5e5e5;
+            background: #eeeeee;
         }
 
         table {
             width: 100%;
+
             border-collapse: collapse;
         }
 
         th,
         td {
-            border: 1px solid #ccc;
+            border: 1px solid #ddd;
+
             padding: 10px;
-            text-align: left;
         }
 
         th {
             background: #f0f0f0;
         }
 
+        td:first-child {
+            width: 80px;
+        }
+
+        td:last-child {
+            width: 220px;
+        }
+
+        .edit-input {
+            width: 100%;
+
+            padding: 7px;
+
+            border: 1px solid #aaa;
+
+            border-radius: 4px;
+        }
+
         .message {
             margin-top: 20px;
-            padding: 10px;
-            background: #f5f5f5;
+
+            padding: 12px;
+
+            background: #f0f0f0;
+
+            border-radius: 5px;
         }
+
+        .error {
+            background: #ffe5e5;
+
+            color: #b00000;
+        }
+
+        .success {
+            background: #e5ffe5;
+
+            color: #006600;
+        }
+
     </style>
+
 </head>
 
 <body>
 
-<h1>簡單 CRUD 測試</h1>
+<div class="container">
 
-<div class="input-area">
-    <input type="text" id="nameInput" placeholder="輸入名稱">
-    <button onclick="createData()">新增</button>
-</div>
+    <h1>簡單 CRUD 測試</h1>
 
-<table>
-    <thead>
-        <tr>
-            <th>ID</th>
-            <th>名稱</th>
-            <th>操作</th>
-        </tr>
-    </thead>
+    <div class="input-area">
 
-    <tbody id="dataTable">
-    </tbody>
-</table>
+        <input
+            type="text"
+            id="nameInput"
+            placeholder="輸入名稱"
+        >
 
-<div class="message" id="message">
-    正在讀取資料...
+        <button onclick="createData()">
+            新增
+        </button>
+
+        <button onclick="readData()">
+            重新讀取
+        </button>
+
+    </div>
+
+    <table>
+
+        <thead>
+
+            <tr>
+
+                <th>ID</th>
+
+                <th>名稱</th>
+
+                <th>操作</th>
+
+            </tr>
+
+        </thead>
+
+        <tbody id="dataTable">
+
+        </tbody>
+
+    </table>
+
+    <div
+        id="message"
+        class="message"
+    >
+        準備完成
+    </div>
+
 </div>
 
 <script>
 
+const API_URL = "http://localhost:8080/api/data";
+
 let dataList = [];
 
-/*
- * =========================
- * READ
- * =========================
- */
+
+/* =========================
+   READ
+========================= */
+
 async function readData() {
 
     try {
 
-        const response = await fetch("backend.txt");
+        showMessage(
+            "正在讀取資料...",
+            false
+        );
+
+        const response = await fetch(
+            API_URL
+        );
 
         if (!response.ok) {
-            throw new Error("無法讀取 backend.txt");
+
+            throw new Error(
+                "HTTP " + response.status
+            );
+
         }
 
-        const text = await response.text();
-
-        dataList = [];
-
-        const lines = text
-            .split(/\r?\n/)
-            .filter(line => line.trim() !== "");
-
-        lines.forEach(line => {
-
-            const parts = line.split("|");
-
-            if (parts.length >= 2) {
-
-                dataList.push({
-                    id: parts[0],
-                    name: parts.slice(1).join("|")
-                });
-
-            }
-
-        });
+        dataList = await response.json();
 
         renderTable();
 
-        showMessage("資料讀取成功");
+        showMessage(
+            "資料讀取成功，共 " +
+            dataList.length +
+            " 筆",
+            false
+        );
 
     } catch (error) {
 
         console.error(error);
 
-        showMessage("讀取失敗：" + error.message);
+        showMessage(
+            "讀取失敗：" +
+            error.message,
+            true
+        );
 
     }
+
 }
 
 
-/*
- * =========================
- * 顯示資料
- * =========================
- */
-function renderTable() {
+/* =========================
+   CREATE
+========================= */
 
-    const table = document.getElementById("dataTable");
+async function createData() {
 
-    table.innerHTML = "";
+    const input =
+        document.getElementById(
+            "nameInput"
+        );
 
-    dataList.forEach(item => {
-
-        const row = document.createElement("tr");
-
-        row.innerHTML = `
-            <td>${escapeHtml(item.id)}</td>
-
-            <td>
-                <span id="name-${item.id}">
-                    ${escapeHtml(item.name)}
-                </span>
-
-                <input
-                    id="edit-${item.id}"
-                    type="text"
-                    value="${escapeHtml(item.name)}"
-                    style="display:none;"
-                >
-            </td>
-
-            <td>
-
-                <button onclick="startEdit('${item.id}')">
-                    修改
-                </button>
-
-                <button onclick="updateData('${item.id}')">
-                    儲存
-                </button>
-
-                <button onclick="deleteData('${item.id}')">
-                    刪除
-                </button>
-
-            </td>
-        `;
-
-        table.appendChild(row);
-
-    });
-}
-
-
-/*
- * =========================
- * CREATE
- * =========================
- */
-function createData() {
-
-    const input = document.getElementById("nameInput");
-
-    const name = input.value.trim();
+    const name =
+        input.value.trim();
 
     if (!name) {
 
@@ -219,62 +283,101 @@ function createData() {
 
     }
 
-    /*
-     * 找目前最大的 ID
-     */
-    let maxId = 0;
+    try {
 
-    dataList.forEach(item => {
+        const response = await fetch(
+            API_URL,
+            {
+                method: "POST",
 
-        const id = parseInt(item.id);
+                headers: {
+                    "Content-Type":
+                        "application/json"
+                },
 
-        if (!isNaN(id) && id > maxId) {
-            maxId = id;
+                body: JSON.stringify({
+                    name: name
+                })
+            }
+        );
+
+        const result =
+            await response.json();
+
+        if (!response.ok) {
+
+            throw new Error(
+                result.error ||
+                "新增失敗"
+            );
+
         }
 
-    });
+        input.value = "";
 
-    const newId = maxId + 1;
+        await readData();
 
-    dataList.push({
-        id: String(newId),
-        name: name
-    });
+        showMessage(
+            "新增成功：ID " +
+            result.id,
+            false
+        );
 
-    input.value = "";
+    } catch (error) {
 
-    renderTable();
+        console.error(error);
 
-    showMessage("新增成功，但尚未寫回 backend.txt");
+        showMessage(
+            "新增失敗：" +
+            error.message,
+            true
+        );
+
+    }
 
 }
 
 
-/*
- * =========================
- * UPDATE
- * =========================
- */
+/* =========================
+   UPDATE
+========================= */
+
 function startEdit(id) {
 
-    const nameSpan = document.getElementById("name-" + id);
+    const nameCell =
+        document.getElementById(
+            "name-" + id
+        );
 
-    const input = document.getElementById("edit-" + id);
+    const input =
+        document.getElementById(
+            "edit-" + id
+        );
 
-    nameSpan.style.display = "none";
+    nameCell.style.display =
+        "none";
 
-    input.style.display = "inline-block";
+    input.style.display =
+        "block";
 
     input.focus();
 
 }
 
 
-function updateData(id) {
+/* =========================
+   儲存修改
+========================= */
 
-    const input = document.getElementById("edit-" + id);
+async function updateData(id) {
 
-    const newName = input.value.trim();
+    const input =
+        document.getElementById(
+            "edit-" + id
+        );
+
+    const newName =
+        input.value.trim();
 
     if (!newName) {
 
@@ -284,82 +387,311 @@ function updateData(id) {
 
     }
 
-    const item = dataList.find(item => item.id === id);
+    try {
 
-    if (!item) {
-        return;
+        const response = await fetch(
+            API_URL + "/" + id,
+            {
+                method: "PUT",
+
+                headers: {
+                    "Content-Type":
+                        "application/json"
+                },
+
+                body: JSON.stringify({
+                    name: newName
+                })
+            }
+        );
+
+        const result =
+            await response.json();
+
+        if (!response.ok) {
+
+            throw new Error(
+                result.error ||
+                "修改失敗"
+            );
+
+        }
+
+        await readData();
+
+        showMessage(
+            "修改成功：ID " + id,
+            false
+        );
+
+    } catch (error) {
+
+        console.error(error);
+
+        showMessage(
+            "修改失敗：" +
+            error.message,
+            true
+        );
+
     }
 
-    item.name = newName;
-
-    renderTable();
-
-    showMessage("修改成功，但尚未寫回 backend.txt");
-
 }
 
 
-/*
- * =========================
- * DELETE
- * =========================
- */
-function deleteData(id) {
+/* =========================
+   DELETE
+========================= */
 
-    const confirmDelete = confirm(
-        "確定要刪除 ID " + id + " 嗎？"
-    );
+async function deleteData(id) {
 
-    if (!confirmDelete) {
+    const confirmed =
+        confirm(
+            "確定要刪除 ID " +
+            id +
+            " 嗎？"
+        );
+
+    if (!confirmed) {
+
         return;
+
     }
 
-    dataList = dataList.filter(item => item.id !== id);
+    try {
 
-    renderTable();
+        const response = await fetch(
+            API_URL + "/" + id,
+            {
+                method: "DELETE"
+            }
+        );
 
-    showMessage("刪除成功，但尚未寫回 backend.txt");
+        const result =
+            await response.json();
+
+        if (!response.ok) {
+
+            throw new Error(
+                result.error ||
+                "刪除失敗"
+            );
+
+        }
+
+        await readData();
+
+        showMessage(
+            "刪除成功：ID " + id,
+            false
+        );
+
+    } catch (error) {
+
+        console.error(error);
+
+        showMessage(
+            "刪除失敗：" +
+            error.message,
+            true
+        );
+
+    }
 
 }
 
 
-/*
- * =========================
- * 顯示訊息
- * =========================
- */
-function showMessage(message) {
+/* =========================
+   顯示表格
+========================= */
 
-    document.getElementById("message").textContent = message;
+function renderTable() {
+
+    const table =
+        document.getElementById(
+            "dataTable"
+        );
+
+    table.innerHTML = "";
+
+    dataList.forEach(item => {
+
+        const row =
+            document.createElement(
+                "tr"
+            );
+
+        row.innerHTML = `
+
+            <td>
+                ${escapeHtml(item.id)}
+            </td>
+
+            <td>
+
+                <span
+                    id="name-${escapeHtml(item.id)}"
+                >
+                    ${escapeHtml(item.name)}
+                </span>
+
+                <input
+                    id="edit-${escapeHtml(item.id)}"
+                    class="edit-input"
+                    type="text"
+                    value="${escapeHtml(item.name)}"
+                    style="display:none;"
+                >
+
+            </td>
+
+            <td>
+
+                <button
+                    onclick="startEdit('${escapeJs(item.id)}')"
+                >
+                    修改
+                </button>
+
+                <button
+                    onclick="updateData('${escapeJs(item.id)}')"
+                >
+                    儲存
+                </button>
+
+                <button
+                    onclick="deleteData('${escapeJs(item.id)}')"
+                >
+                    刪除
+                </button>
+
+            </td>
+        `;
+
+        table.appendChild(row);
+
+    });
 
 }
 
 
-/*
- * =========================
- * 防止 HTML 注入
- * =========================
- */
+/* =========================
+   HTML 防注入
+========================= */
+
 function escapeHtml(value) {
 
     return String(value)
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#039;");
+        .replace(
+            /&/g,
+            "&amp;"
+        )
+        .replace(
+            /</g,
+            "&lt;"
+        )
+        .replace(
+            />/g,
+            "&gt;"
+        )
+        .replace(
+            /"/g,
+            "&quot;"
+        )
+        .replace(
+            /'/g,
+            "&#039;"
+        );
 
 }
 
 
-/*
- * =========================
- * 啟動
- * =========================
- */
+/* =========================
+   JavaScript 字串安全
+========================= */
+
+function escapeJs(value) {
+
+    return String(value)
+        .replace(
+            /\\/g,
+            "\\\\"
+        )
+        .replace(
+            /'/g,
+            "\\'"
+        );
+
+}
+
+
+/* =========================
+   顯示訊息
+========================= */
+
+function showMessage(
+    message,
+    isError
+) {
+
+    const element =
+        document.getElementById(
+            "message"
+        );
+
+    element.textContent =
+        message;
+
+    element.className =
+        "message";
+
+    if (isError) {
+
+        element.classList.add(
+            "error"
+        );
+
+    } else {
+
+        element.classList.add(
+            "success"
+        );
+
+    }
+
+}
+
+
+/* =========================
+   Enter 新增
+========================= */
+
+document
+    .getElementById("nameInput")
+    .addEventListener(
+        "keydown",
+        function(event) {
+
+            if (
+                event.key === "Enter"
+            ) {
+
+                createData();
+
+            }
+
+        }
+    );
+
+
+/* =========================
+   啟動
+========================= */
+
 readData();
 
 </script>
 
 </body>
+
 </html>
