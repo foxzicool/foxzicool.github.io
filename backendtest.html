@@ -2,7 +2,6 @@
 <html lang="zh-TW">
 
 <head>
-
     <meta charset="UTF-8">
 
     <meta
@@ -10,7 +9,7 @@
         content="width=device-width, initial-scale=1.0"
     >
 
-    <title>GitHub CRUD Test</title>
+    <title>資料管理</title>
 
     <style>
 
@@ -19,29 +18,30 @@
         }
 
         body {
+            margin: 0;
+            padding: 40px 20px;
+
             font-family:
                 Arial,
                 "Microsoft JhengHei",
                 sans-serif;
 
-            max-width: 900px;
-
-            margin: 40px auto;
-
-            padding: 20px;
-
             background: #f5f5f5;
         }
 
         .container {
-            background: white;
+            max-width: 800px;
+
+            margin: auto;
 
             padding: 25px;
 
-            border-radius: 10px;
+            background: white;
+
+            border-radius: 12px;
 
             box-shadow:
-                0 2px 10px
+                0 3px 15px
                 rgba(0, 0, 0, 0.1);
         }
 
@@ -49,15 +49,15 @@
             margin-top: 0;
         }
 
-        .input-area {
+        .add-area {
             display: flex;
 
             gap: 10px;
 
-            margin-bottom: 20px;
+            margin-bottom: 25px;
         }
 
-        #nameInput {
+        .add-area input {
             flex: 1;
 
             padding: 10px;
@@ -66,7 +66,7 @@
 
             border: 1px solid #ccc;
 
-            border-radius: 5px;
+            border-radius: 6px;
         }
 
         button {
@@ -74,13 +74,11 @@
 
             border: 1px solid #ccc;
 
-            border-radius: 5px;
+            border-radius: 6px;
 
             background: white;
 
             cursor: pointer;
-
-            font-size: 14px;
         }
 
         button:hover {
@@ -95,13 +93,15 @@
 
         th,
         td {
-            border: 1px solid #ddd;
-
             padding: 10px;
+
+            border-bottom: 1px solid #ddd;
+
+            text-align: left;
         }
 
         th {
-            background: #f0f0f0;
+            background: #f5f5f5;
         }
 
         .edit-input {
@@ -111,7 +111,7 @@
 
             border: 1px solid #aaa;
 
-            border-radius: 4px;
+            border-radius: 5px;
         }
 
         .message {
@@ -119,9 +119,9 @@
 
             padding: 12px;
 
-            background: #f0f0f0;
+            border-radius: 6px;
 
-            border-radius: 5px;
+            background: #f0f0f0;
         }
 
         .success {
@@ -133,7 +133,13 @@
         .error {
             background: #ffe5e5;
 
-            color: #b00000;
+            color: #aa0000;
+        }
+
+        .loading {
+            opacity: 0.6;
+
+            pointer-events: none;
         }
 
     </style>
@@ -142,27 +148,35 @@
 
 <body>
 
-<div class="container">
+<div
+    id="app"
+    class="container"
+>
 
-    <h1>GitHub TXT CRUD</h1>
+    <h1>資料管理</h1>
 
-    <div class="input-area">
+    <div class="add-area">
 
         <input
-            type="text"
             id="nameInput"
+            type="text"
             placeholder="輸入名稱"
         >
 
-        <button onclick="createData()">
+        <button
+            onclick="createData()"
+        >
             新增
         </button>
 
-        <button onclick="readData()">
-            重新讀取
+        <button
+            onclick="readData()"
+        >
+            重新整理
         </button>
 
     </div>
+
 
     <table>
 
@@ -180,17 +194,18 @@
 
         </thead>
 
-        <tbody id="dataTable">
-
-        </tbody>
+        <tbody
+            id="dataTable"
+        ></tbody>
 
     </table>
+
 
     <div
         id="message"
         class="message"
     >
-        正在讀取...
+        正在讀取資料...
     </div>
 
 </div>
@@ -200,27 +215,22 @@
 
 /*
 ==================================================
-GitHub Repository
+Vercel API
 ==================================================
-*/
 
-const OWNER = "foxzicool";
+部署 Vercel Function 後，
+把這裡改成你的網址。
 
-const REPO = "foxzicool.github.io";
+例如：
 
-const FILE = "backend.txt";
-
-const BRANCH = "main";
-
-
-/*
-==================================================
-GitHub API
-==================================================
+https://fox-crud.vercel.app/api/data
 */
 
 const API_URL =
-    `https://api.github.com/repos/${OWNER}/${REPO}/contents/${FILE}`;
+    "https://YOUR-VERCEL-APP.vercel.app/api/data";
+
+
+let dataList = [];
 
 
 /*
@@ -233,50 +243,39 @@ async function readData() {
 
     try {
 
+        setLoading(true);
+
         showMessage(
-            "正在讀取 GitHub 資料...",
+            "正在讀取資料...",
             false
         );
 
         const response =
             await fetch(
-                API_URL +
-                "?ref=" +
-                BRANCH
+                API_URL
             );
-
-        if (!response.ok) {
-
-            throw new Error(
-                "GitHub API " +
-                response.status
-            );
-
-        }
 
         const result =
             await response.json();
 
-        const content =
-            atob(
-                result.content
-                    .replace(/\n/g, "")
+        if (!response.ok) {
+
+            throw new Error(
+                result.error ||
+                "讀取失敗"
             );
 
-        const text =
-            decodeURIComponent(
-                escape(content)
-            );
+        }
 
         dataList =
-            parseData(text);
+            result;
 
         renderTable();
 
         showMessage(
             "讀取成功，共 " +
             dataList.length +
-            " 筆",
+            " 筆資料",
             false
         );
 
@@ -292,54 +291,11 @@ async function readData() {
         );
 
     }
+    finally {
 
-}
+        setLoading(false);
 
-
-let dataList = [];
-
-
-/*
-==================================================
-解析 TXT
-==================================================
-*/
-
-function parseData(text) {
-
-    const result = [];
-
-    const lines =
-        text
-            .split(/\r?\n/)
-            .filter(
-                line =>
-                    line.trim() !== ""
-            );
-
-    lines.forEach(line => {
-
-        const parts =
-            line.split("|");
-
-        if (parts.length >= 2) {
-
-            result.push({
-
-                id: parts[0],
-
-                name:
-                    parts
-                        .slice(1)
-                        .join("|")
-
-            });
-
-        }
-
-    });
-
-    return result;
+    }
 
 }
 
@@ -368,44 +324,53 @@ async function createData() {
 
     }
 
-    /*
-     * 注意：
-     *
-     * 這裡不能直接使用 FOXTOKEN。
-     *
-     * 因為 HTML 是公開的。
-     *
-     * 這個版本先建立 GitHub Issue
-     * 作為 CRUD 請求。
-     */
-
     try {
 
+        setLoading(true);
+
         showMessage(
-            "正在送出新增請求...",
+            "正在新增...",
             false
         );
 
         const response =
-            await createIssue(
-                "CREATE",
+            await fetch(
+                API_URL,
                 {
-                    name: name
+
+                    method: "POST",
+
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
+
+                    body:
+                        JSON.stringify({
+                            name: name
+                        })
+
                 }
             );
+
+        const result =
+            await response.json();
 
         if (!response.ok) {
 
             throw new Error(
-                "建立請求失敗"
+                result.error ||
+                "新增失敗"
             );
 
         }
 
         input.value = "";
 
+        await readData();
+
         showMessage(
-            "新增請求已送出，GitHub Actions 正在處理。",
+            "新增成功",
             false
         );
 
@@ -419,6 +384,11 @@ async function createData() {
             error.message,
             true
         );
+
+    }
+    finally {
+
+        setLoading(false);
 
     }
 
@@ -451,21 +421,51 @@ async function updateData(id) {
 
     try {
 
+        setLoading(true);
+
         showMessage(
-            "正在送出修改請求...",
+            "正在修改...",
             false
         );
 
-        await createIssue(
-            "UPDATE",
-            {
-                id: id,
-                name: name
-            }
-        );
+        const response =
+            await fetch(
+                API_URL +
+                "/" +
+                encodeURIComponent(id),
+                {
+
+                    method: "PUT",
+
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
+
+                    body:
+                        JSON.stringify({
+                            name: name
+                        })
+
+                }
+            );
+
+        const result =
+            await response.json();
+
+        if (!response.ok) {
+
+            throw new Error(
+                result.error ||
+                "修改失敗"
+            );
+
+        }
+
+        await readData();
 
         showMessage(
-            "修改請求已送出，GitHub Actions 正在處理。",
+            "修改成功",
             false
         );
 
@@ -479,6 +479,11 @@ async function updateData(id) {
             error.message,
             true
         );
+
+    }
+    finally {
+
+        setLoading(false);
 
     }
 
@@ -495,9 +500,7 @@ async function deleteData(id) {
 
     if (
         !confirm(
-            "確定要刪除 ID " +
-            id +
-            " 嗎？"
+            "確定要刪除這筆資料嗎？"
         )
     ) {
 
@@ -507,20 +510,41 @@ async function deleteData(id) {
 
     try {
 
+        setLoading(true);
+
         showMessage(
-            "正在送出刪除請求...",
+            "正在刪除...",
             false
         );
 
-        await createIssue(
-            "DELETE",
-            {
-                id: id
-            }
-        );
+        const response =
+            await fetch(
+                API_URL +
+                "/" +
+                encodeURIComponent(id),
+                {
+
+                    method: "DELETE"
+
+                }
+            );
+
+        const result =
+            await response.json();
+
+        if (!response.ok) {
+
+            throw new Error(
+                result.error ||
+                "刪除失敗"
+            );
+
+        }
+
+        await readData();
 
         showMessage(
-            "刪除請求已送出，GitHub Actions 正在處理。",
+            "刪除成功",
             false
         );
 
@@ -536,54 +560,11 @@ async function deleteData(id) {
         );
 
     }
+    finally {
 
-}
+        setLoading(false);
 
-
-/*
-==================================================
-建立 Issue
-==================================================
-*/
-
-async function createIssue(
-    action,
-    data
-) {
-
-    const title =
-        "CRUD_REQUEST";
-
-    const body =
-        JSON.stringify({
-
-            action:
-                action,
-
-            data:
-                data
-
-        });
-
-    /*
-     * 這裡不能放 Token。
-     *
-     * 因為 GitHub Pages 是公開網站。
-     */
-
-    const issueUrl =
-        `https://github.com/${OWNER}/${REPO}/issues/new` +
-        `?title=${encodeURIComponent(title)}` +
-        `&body=${encodeURIComponent(body)}`;
-
-    window.open(
-        issueUrl,
-        "_blank"
-    );
-
-    return {
-        ok: true
-    };
+    }
 
 }
 
@@ -603,64 +584,93 @@ function renderTable() {
 
     table.innerHTML = "";
 
-    dataList.forEach(item => {
 
-        const row =
-            document.createElement(
-                "tr"
-            );
+    if (
+        dataList.length === 0
+    ) {
 
-        row.innerHTML = `
+        table.innerHTML = `
 
-            <td>
-                ${escapeHtml(item.id)}
-            </td>
+            <tr>
 
-            <td>
-
-                <span
-                    id="name-${escapeHtml(item.id)}"
+                <td
+                    colspan="3"
+                    style="text-align:center;"
                 >
-                    ${escapeHtml(item.name)}
-                </span>
+                    沒有資料
+                </td>
 
-                <input
-                    id="edit-${escapeHtml(item.id)}"
-                    class="edit-input"
-                    type="text"
-                    value="${escapeHtml(item.name)}"
-                    style="display:none;"
-                >
-
-            </td>
-
-            <td>
-
-                <button
-                    onclick="startEdit('${escapeJs(item.id)}')"
-                >
-                    修改
-                </button>
-
-                <button
-                    onclick="updateData('${escapeJs(item.id)}')"
-                >
-                    儲存
-                </button>
-
-                <button
-                    onclick="deleteData('${escapeJs(item.id)}')"
-                >
-                    刪除
-                </button>
-
-            </td>
+            </tr>
 
         `;
 
-        table.appendChild(row);
+        return;
 
-    });
+    }
+
+
+    dataList.forEach(
+        item => {
+
+            const row =
+                document.createElement(
+                    "tr"
+                );
+
+
+            row.innerHTML = `
+
+                <td>
+                    ${escapeHtml(item.id)}
+                </td>
+
+                <td>
+
+                    <span
+                        id="name-${escapeHtml(item.id)}"
+                    >
+                        ${escapeHtml(item.name)}
+                    </span>
+
+                    <input
+                        id="edit-${escapeHtml(item.id)}"
+                        class="edit-input"
+                        type="text"
+                        value="${escapeHtml(item.name)}"
+                        style="display:none;"
+                    >
+
+                </td>
+
+                <td>
+
+                    <button
+                        onclick="startEdit('${escapeJs(item.id)}')"
+                    >
+                        修改
+                    </button>
+
+                    <button
+                        onclick="updateData('${escapeJs(item.id)}')"
+                    >
+                        儲存
+                    </button>
+
+                    <button
+                        onclick="deleteData('${escapeJs(item.id)}')"
+                    >
+                        刪除
+                    </button>
+
+                </td>
+
+            `;
+
+
+            table.appendChild(row);
+
+        }
+    );
 
 }
 
@@ -734,7 +744,7 @@ function escapeHtml(value) {
 
 /*
 ==================================================
-JS 安全
+JavaScript 字串安全
 ==================================================
 */
 
@@ -777,6 +787,7 @@ function showMessage(
     element.className =
         "message";
 
+
     if (error) {
 
         element.classList.add(
@@ -793,6 +804,65 @@ function showMessage(
     }
 
 }
+
+
+/*
+==================================================
+Loading
+==================================================
+*/
+
+function setLoading(
+    loading
+) {
+
+    const app =
+        document.getElementById(
+            "app"
+        );
+
+    if (loading) {
+
+        app.classList.add(
+            "loading"
+        );
+
+    }
+    else {
+
+        app.classList.remove(
+            "loading"
+        );
+
+    }
+
+}
+
+
+/*
+==================================================
+Enter 新增
+==================================================
+*/
+
+document
+    .getElementById(
+        "nameInput"
+    )
+    .addEventListener(
+        "keydown",
+        function(event) {
+
+            if (
+                event.key === "Enter"
+            ) {
+
+                createData();
+
+            }
+
+        }
+    );
 
 
 /*
